@@ -103,7 +103,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # Single owner of durable merge-outcome publication, shared with
 # bin/fm-pr-merge.sh so self and poll origins use the same role-routed outcome.
-# The watcher still owns its local actionable poll row and poll retirement.
+# The watcher still owns immediate delivery of its actionable poll result and
+# poll retirement.
 # shellcheck source=bin/fm-merge-outcome-lib.sh
 . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
 # shellcheck source=bin/fm-x-lib.sh
