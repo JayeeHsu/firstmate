@@ -331,7 +331,8 @@ JS
 # Shared driver preamble: a fake main-session ExtensionAPI with a synchronous
 # event bus (mirrors pi's EventEmitter-backed bus), captured handlers, and
 # captured main-bound messages.
-DRIVER_PRELUDE=$(cat <<'JS'
+DRIVER_PRELUDE_FILE="$TMP_ROOT/driver-prelude.js"
+cat > "$DRIVER_PRELUDE_FILE" <<'JS'
 const { spawnSync } = await import("node:child_process");
 const { mkdirSync, writeFileSync } = await import("node:fs");
 const { pathToFileURL } = await import("node:url");
@@ -534,7 +535,7 @@ function outcomeScript(args) {
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 JS
-)
+DRIVER_PRELUDE=$(cat "$DRIVER_PRELUDE_FILE")
 
 test_branch_dispatch_two_stage_filter_and_prefix_contract() {
   local repo home out status
@@ -2585,7 +2586,7 @@ test_real_pi_picker_primitives_stay_bounded_and_searchable() {
     echo "skip: node not found for the Pi picker primitives test"
     return
   fi
-  local package_dir fixture out status
+  local package_dir fixture original_dir out status
   package_dir=${FM_PI_PACKAGE_DIR:-"$(npm root -g 2>/dev/null)/@earendil-works/pi-coding-agent"}
   if [ ! -f "$package_dir/package.json" ]; then
     echo "skip: installed @earendil-works/pi-coding-agent package not found"
@@ -2596,8 +2597,10 @@ test_real_pi_picker_primitives_stay_bounded_and_searchable() {
   cp "$ROOT/.pi/extensions/lib/fm-branch-model-picker.ts" "$fixture/lib/fm-branch-model-picker.ts"
   ln -s "$package_dir" "$fixture/node_modules/@earendil-works/pi-coding-agent"
   ln -s "$package_dir/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
-  out=$(cd "$fixture" && LIB="$fixture/lib/fm-branch-model-picker.ts" PI_VERSION_FILE="$package_dir/package.json" \
-    node --input-type=module 2>&1 <<'JS'
+  original_dir=$PWD
+  cd "$fixture" || fail "could not enter the Pi picker primitives fixture"
+  LIB="$fixture/lib/fm-branch-model-picker.ts" PI_VERSION_FILE="$package_dir/package.json" \
+    node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'JS'
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 
@@ -2658,8 +2661,9 @@ if (input.getValue() !== "ch") {
   throw new Error(`installed pi ${version} Input no longer accumulates typed characters for the picker's search box`);
 }
 JS
-  )
   status=$?
+  cd "$original_dir" || fail "could not leave the Pi picker primitives fixture"
+  out=$(cat "$TMP_ROOT/node-output")
   expect_code 0 "$status" "the installed Pi must still provide the picker's bounded searchable primitives: $out"
   [ -z "$out" ] || fail "Pi picker primitives test printed output: $out"
   pass "the installed Pi still bounds the picker's list and ranks its search"
