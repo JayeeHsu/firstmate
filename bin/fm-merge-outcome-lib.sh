@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# One durable, supervisor-facing record for a merge that actually landed.
+# Shared durable, supervisor-facing outcome publication for a confirmed merge.
 #
-# A merge used to be the one lifecycle event that left no trace outside the
-# merging agent's own memory: bin/fm-pr-merge.sh ended at the forge call, and a
-# home merging under standing authority never waits for the merge poll that
-# would otherwise confirm it. This library is the single owner of that record,
-# so a merge this home performed itself and a merge someone else performed on
-# the forge both arrive through one channel in one shape.
+# Both a merge performed by this home and a merge detected by its existing poll
+# use this operation, so neither outcome depends on an agent remembering it.
+# The watcher retains its local actionable poll row after this shared
+# publication; that row is observation handling, not a second outcome path.
 #
-# The destination is the home's ROLE, never the caller's choice:
-#   - a secondmate home reports upward to its parent, on the same reply channel
+# The destination is the home's role, never the caller's choice:
+#   - a secondmate home reports upward to its parent on the same reply channel
 #     bin/fm-inactive-reconcile.sh's report_to_parent already uses, in the same
 #     "<state> [key=<slug>]: <note>" shape the charter contract defines;
-#   - a main home reports to the captain, through the durable wake queue.
-# No new state file and no new transport: the parent channel and the wake queue
-# are the two records the captain already reads.
+#   - a main home reports to the captain through the durable wake queue.
+# A poll observed in a secondmate home also receives a local durable wake after
+# the upward write, so the mate can handle its own poll observation.
+# No new state file and no new transport are involved.
 #
-# Normal operation deduplicates each task and canonical PR identity through the
-# merge-notification marker owned by bin/fm-pr-lib.sh. The outcome is published
-# before that marker is committed, so a failed commit stays eligible for
-# at-least-once retry and may rarely duplicate rather than leave a merge silent.
+# Normal operation deduplicates the task's latest canonical PR identity through
+# the merge-notification marker owned by bin/fm-pr-lib.sh. Main-home wake keys
+# also include that PR identity so distinct PRs for a reused task remain
+# distinct in queue presentation. The outcome is published before the marker
+# is committed, so a failed commit stays eligible for at-least-once retry and
+# may rarely duplicate rather than leave a merge silent.
 #
 # Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
 # source beyond its sourced libraries.
@@ -64,12 +65,11 @@ FM_MERGE_OUTCOME_ALREADY_RECORDED=false
 
 # fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin>
 #
-# <origin> says who observed the merge, because that decides what is still
-# missing:
-#   self - this home performed the merge, so nothing else has recorded it.
-#   poll - this home's merge poll detected a merge this home did not perform,
-#          so the same canonical outcome also wakes this home after any upward
-#          hop needed by a secondmate home.
+# <origin> says who observed the merge, because that decides whether the
+# existing poll path also needs a local wake:
+#   self - this home performed the merge.
+#   poll - this home's merge poll detected the merge, so the canonical outcome
+#          also wakes this home after any upward hop needed by a secondmate.
 #
 # Returns 0 when the outcome is recorded (or already was), 2 on an invalid
 # request, 3 when this home's own role or parent binding cannot be read well

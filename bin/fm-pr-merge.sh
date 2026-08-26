@@ -28,10 +28,12 @@
 # short-option cluster such as -yR, because the repository comes only from the
 # URL, nor --sha on GitLab because the head comes only from the live read.
 #
-# A merge that lands is reported before this script exits: bin/fm-merge-outcome-lib.sh
-# owns that record, its destination, normal-case deduplication, and at-least-once
-# failure recovery. Only a successful merge is reported, and a merge that landed while its record could
-# not be written is reported loudly rather than treated as a clean merge.
+# After the forge command, this script confirms the PR is actually merged before
+# reporting it; an auto-merge-queued or unconfirmed request leaves the poll armed
+# and records no landed outcome. bin/fm-merge-outcome-lib.sh owns a confirmed
+# merge's destination, normal-case deduplication, and at-least-once recovery.
+# A landed merge whose outcome cannot be written is reported loudly rather than
+# misreported as a failed merge.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra forge merge args>]
 set -eu
 
