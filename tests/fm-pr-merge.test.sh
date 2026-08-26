@@ -82,7 +82,10 @@ add_gh_mocks() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
 case "${1:-} ${2:-}" in
-  "pr view") printf '%s\n' "${FM_TEST_GH_MERGE_STATE:-MERGED}" ;;
+  "pr view")
+    [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
+    printf 'pull_request:\n  number: %s\n  state: %s\n' "$3" "${FM_TEST_GH_MERGE_STATE:-merged}"
+    ;;
 esac
 exit 0
 SH
@@ -1002,7 +1005,7 @@ test_queued_github_merge_leaves_the_poll_armed() {
   add_gh_mocks "$case_dir" 9999999999999999999999999999999999999999
   : >"$case_dir/gh-axi.log"
 
-  FM_TEST_GH_MERGE_STATE=OPEN FM_TEST_HOME="$case_dir/home" \
+  FM_TEST_GH_MERGE_STATE=open FM_TEST_HOME="$case_dir/home" \
     run_pr_merge "$case_dir" task-x1 "$url" \
       >"$case_dir/stdout" 2>"$case_dir/stderr" \
     || fail "queued-github-merge: accepted merge command failed"

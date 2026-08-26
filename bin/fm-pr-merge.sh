@@ -29,8 +29,8 @@
 # URL, nor --sha on GitLab because the head comes only from the live read.
 #
 # A merge that lands is reported before this script exits: bin/fm-merge-outcome-lib.sh
-# owns that record, its destination, and its at-most-once contract. Only a
-# successful merge is reported, and a merge that landed while its record could
+# owns that record, its destination, normal-case deduplication, and at-least-once
+# failure recovery. Only a successful merge is reported, and a merge that landed while its record could
 # not be written is reported loudly rather than treated as a clean merge.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra forge merge args>]
 set -eu
@@ -252,6 +252,24 @@ FIELDS
   FM_PR_MERGE_HEAD=$live_head
 }
 
+github_confirm_merged() {
+  local output state
+  if ! output=$(gh-axi pr view "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" 2>/dev/null); then
+    printf 'actionable: GitHub accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
+      "$URL" >&2
+    return 2
+  fi
+  if ! state=$(printf '%s\n' "$output" | awk '
+    $1 == "state:" { count++; value=$2 }
+    END { if (count == 1 && value != "") print value; else exit 1 }
+  '); then
+    printf 'actionable: GitHub accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
+      "$URL" >&2
+    return 2
+  fi
+  [ "$state" = merged ]
+}
+
 gitlab_confirm_merged() {
   local json state
   if ! json=$(GITLAB_HOST="$FM_PR_HOST" glab mr view "$PR_NUMBER" \
@@ -277,16 +295,9 @@ case "$PROVIDER" in
       merge_args=(--squash)
     fi
     gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
-    github_state=
-    if ! github_state=$(gh-axi pr view "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
-      --json state --jq '.state' 2>/dev/null); then
-      printf 'actionable: GitHub accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
-        "$URL" >&2
-      exit 0
-    fi
-    if [ "$github_state" != MERGED ]; then
-      exit 0
-    fi
+    github_confirm_rc=0
+    github_confirm_merged || github_confirm_rc=$?
+    [ "$github_confirm_rc" -eq 0 ] || exit 0
     ;;
   gitlab)
     gitlab_verify_mergeable || exit 1
