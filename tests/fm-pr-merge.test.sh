@@ -31,6 +31,7 @@
 #   (t) a successful merge in a main home leaves a durable wake naming the PR
 #   (u) a secondmate home with no usable parent binding says so loudly instead
 #       of merging in silence
+#   (v) an accepted queued GitHub merge emits nothing and leaves its poll armed
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -78,6 +79,9 @@ add_gh_mocks() {
   cat > "$case_dir/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+case "${1:-} ${2:-}" in
+  "pr view") printf '%s\n' "${FM_TEST_GH_MERGE_STATE:-MERGED}" ;;
+esac
 exit 0
 SH
   cat > "$case_dir/fakebin/gh" <<SH
@@ -964,6 +968,27 @@ test_main_home_merge_leaves_a_durable_wake() {
   pass "a merge a main home performs itself leaves one durable wake naming the PR"
 }
 
+test_queued_github_merge_leaves_the_poll_armed() {
+  local case_dir url
+  url=https://github.com/example/repo/pull/66
+  case_dir=$(make_home_case queued-github-merge)
+  add_gh_mocks "$case_dir" 9999999999999999999999999999999999999999
+  : >"$case_dir/gh-axi.log"
+
+  FM_TEST_GH_MERGE_STATE=OPEN FM_TEST_HOME="$case_dir/home" \
+    run_pr_merge "$case_dir" task-x1 "$url" \
+      >"$case_dir/stdout" 2>"$case_dir/stderr" \
+    || fail "queued-github-merge: accepted merge command failed"
+
+  assert_absent "$case_dir/state/.wake-queue" \
+    "queued-github-merge: a queued merge was reported as landed"
+  [ -f "$case_dir/state/task-x1.check.sh" ] \
+    || fail "queued-github-merge: the merge poll was not left armed"
+  [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
+    || fail "queued-github-merge: a queued merge was marked as reported"
+  pass "a queued GitHub merge stays silent and leaves confirmation to the armed poll"
+}
+
 test_secondmate_without_parent_binding_is_loud() {
   local case_dir rc url
   url=https://github.com/example/repo/pull/65
@@ -1018,4 +1043,5 @@ test_gitlab_merge_reports_upward
 test_failed_merge_reports_nothing
 test_gitlab_refusal_reports_nothing
 test_main_home_merge_leaves_a_durable_wake
+test_queued_github_merge_leaves_the_poll_armed
 test_secondmate_without_parent_binding_is_loud

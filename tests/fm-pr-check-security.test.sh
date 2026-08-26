@@ -92,6 +92,9 @@ SH
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+case "${1:-} ${2:-}" in
+  "pr view") printf '%s\n' "${FM_TEST_GH_MERGE_STATE:-MERGED}" ;;
+esac
 exit "${FM_TEST_GH_AXI_RC:-0}"
 SH
   # Plain glab, reproducing the real CLI's contract: its field output on stdout
@@ -3069,6 +3072,85 @@ seed_secondmate_home() {  # <dir> [<route>]
     > "$dir/home/.fm-secondmate-parent"
 }
 
+test_merged_poll_retries_a_failed_upward_report() {
+  local dir state rc replies url
+  url=https://github.com/o/r/pull/1
+  dir=$(make_case merged-poll-upward-retry)
+  state="$dir/home/state"
+  replies="$state/parent-replies.status"
+  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+  write_poll_meta "$state" task-a "$url"
+  seed_canonical_poll "$dir" task-a "$url"
+  add_stop_custom_check "$dir"
+
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+    > "$dir/watch-1.out" 2> "$dir/watch-1.err"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "merged-poll-upward-retry: failed report did not keep the watcher loud"
+  [ -f "$state/task-a.check.sh" ] \
+    || fail "merged-poll-upward-retry: failed report retired its retry poll"
+  [ ! -e "$state/task-a.pr-poll-merge-notified" ] \
+    || fail "merged-poll-upward-retry: failed report was marked notified"
+  [ ! -e "$replies" ] \
+    || fail "merged-poll-upward-retry: failed report wrote a parent reply"
+
+  printf 'schema=fm-secondmate-parent.v1\nroute=remote\n' \
+    > "$dir/home/.fm-secondmate-parent"
+  rm -f "$state/.last-check"
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+    > "$dir/watch-2.out" 2> "$dir/watch-2.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "merged-poll-upward-retry: retry failed: $(cat "$dir/watch-2.err")"
+  if [ ! -e "$replies" ]; then
+    ack_watcher_cycle "$state" \
+      || fail "merged-poll-upward-retry: recovery acknowledgement failed"
+    rm -f "$state/.last-check"
+    set +e
+    FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+      > "$dir/watch-3.out" 2> "$dir/watch-3.err"
+    rc=$?
+    set -e
+    [ "$rc" -eq 0 ] || fail "merged-poll-upward-retry: post-recovery retry failed: $(cat "$dir/watch-3.err")"
+  fi
+  assert_grep "done [key=merged-task-a]: merged task-a $url" "$replies" \
+    "merged-poll-upward-retry: repaired binding did not receive the retry"
+  assert_poll_absent "$state" task-a
+  pass "a failed upward merge report keeps its poll armed for repair and retry"
+}
+
+test_self_merge_and_poll_publish_one_outcome() {
+  local dir state replies url merge_pid merge_rc watcher_rc
+  url=https://github.com/o/r/pull/1
+  dir=$(make_case merge-outcome-race)
+  state="$dir/home/state"
+  replies="$state/parent-replies.status"
+  seed_secondmate_home "$dir"
+  write_task_meta "$dir" task-a
+  run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/seed.err" \
+    || fail "merge-outcome-race: could not arm merge poll"
+
+  set +e
+  run_merge_entry "$dir" task-a "$url" >"$dir/merge.out" 2>"$dir/merge.err" &
+  merge_pid=$!
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+    >"$dir/watch.out" 2>"$dir/watch.err"
+  watcher_rc=$?
+  wait "$merge_pid"
+  merge_rc=$?
+  set -e
+  [ "$watcher_rc" -eq 0 ] \
+    || fail "merge-outcome-race: watcher failed: $(cat "$dir/watch.err")"
+  [ "$merge_rc" -eq 0 ] \
+    || fail "merge-outcome-race: merge entrypoint failed: $(cat "$dir/merge.err")"
+  [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
+    || fail "merge-outcome-race: concurrent self and poll reports produced duplicate outcomes"
+  pass "self-merge and poll publication serialize to one durable outcome"
+}
+
 test_merged_poll_reports_upward_from_a_secondmate_home_once() {
   local dir state rc replies url
   url=https://github.com/o/r/pull/1
@@ -3528,6 +3610,8 @@ test_parser_matrix
 test_gitlab_merge_watch
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed
+test_merged_poll_retries_a_failed_upward_report
+test_self_merge_and_poll_publish_one_outcome
 test_merged_poll_reports_upward_from_a_secondmate_home_once
 test_different_merged_pr_for_same_task_is_not_absorbed
 test_persistent_secondmate_retirement_is_poll_only

@@ -1235,39 +1235,23 @@ while :; do
       fi
       if [ -n "$out" ]; then
         reason="check: $c: $out"
-        if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ] \
-          && fm_pr_poll_merge_already_notified "$STATE" "$id" \
-            "$provider" "$host" "$path" "$number"; then
-          # This exact merge was already surfaced to main once for this task
-          # (fm_pr_poll_merge_mark_notified below records that at first
-          # notification, and it survives a later re-registered poll for the
-          # same, already-merged task - bin/fm-pr-lib.sh owns why). A repeat
-          # identical detection is a no-op, not captain-facing progress
-          # (AGENTS.md section 8): absorb it rather than enqueue another
-          # main-blocking row, but still retire the poll so it stops firing.
-          retire_merged_pr_poll "$id"
-          triage_log "absorbed duplicate merged PR poll result for $id"
-          touch "$STATE/.last-check"
-          continue
-        fi
-        fm_wake_append check "$c" "$reason" || exit 1
         if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
-          # The row above is this home's own durable record of the merge. A
-          # secondmate home owes its parent the same outcome, and this is the
-          # merge nobody here performed - the captain's own forge merge - so it
-          # travels the one merge-outcome channel bin/fm-pr-merge.sh uses rather
-          # than a second reporting path. In a main home the row above already
-          # is the captain's record, so the report is a no-op there.
           merge_outcome_rc=0
           fm_merge_outcome_report "$FM_HOME" "$STATE" "$id" "$url" poll \
-            || merge_outcome_rc=$?
-          [ "$merge_outcome_rc" -eq 0 ] \
-            || triage_log "merge outcome for $id could not be reported upward (rc=$merge_outcome_rc)"
-          fm_pr_poll_merge_mark_notified "$STATE" "$id" \
-            "$provider" "$host" "$path" "$number" \
-            || triage_log "merge notification receipt could not be recorded for $id"
+            "$c" "$reason" || merge_outcome_rc=$?
+          if [ "$merge_outcome_rc" -ne 0 ]; then
+            triage_log "merge outcome for $id could not be recorded (rc=$merge_outcome_rc)"
+            exit 1
+          fi
           retire_merged_pr_poll "$id"
+          touch "$STATE/.last-check"
+          if [ "$FM_MERGE_OUTCOME_ALREADY_RECORDED" = true ]; then
+            triage_log "absorbed duplicate merged PR poll result for $id"
+            continue
+          fi
+          wake "$reason"
         fi
+        fm_wake_append check "$c" "$reason" || exit 1
         touch "$STATE/.last-check"
         wake "$reason"
       fi

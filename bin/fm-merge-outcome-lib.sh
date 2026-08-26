@@ -59,20 +59,10 @@ fm_merge_outcome_append_once() {  # <path> <line>
   printf '%s\n' "$line" >> "$path"
 }
 
-# The durable wake for a main home. bin/fm-wake-lib.sh owns the queue but
-# assigns its own globals when sourced, so they are declared local here: that
-# contains them to this call instead of leaking into every script that sources
-# this library.
-_fm_merge_outcome_wake() {  # <state> <key> <payload>
-  local state=$1 key=$2 payload=$3
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
-  # shellcheck source=bin/fm-wake-lib.sh
-  . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-wake-lib.sh"
-  fm_wake_append check "$key" "$payload"
-}
+# shellcheck disable=SC2034 # Public result consumed by sourcing callers.
+FM_MERGE_OUTCOME_ALREADY_RECORDED=false
 
-# fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin>
+# fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin> [<poll-key> <poll-payload>]
 #
 # <origin> says who observed the merge, because that decides what is still
 # missing:
@@ -88,12 +78,23 @@ _fm_merge_outcome_wake() {  # <state> <key> <payload>
 # enough to say where the outcome belongs, and 1 on any other failure to
 # record. A caller that has already merged must report a non-zero return rather
 # than treat it as success: the merge landed and the record did not.
-fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
-  local home=$1 state=$2 id=$3 url=$4 origin=$5
-  local self='' self_rc=0 destination line
+fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [<poll-key> <poll-payload>]
+  local home=$1 state=$2 id=$3 url=$4 origin=$5 poll_key=${6:-} poll_payload=${7:-}
+  local self='' self_rc=0 destination='' line lock status=0
+  local provider host path number
+  # shellcheck disable=SC2034 # Sourced wake helpers consume these scoped globals.
+  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  FM_MERGE_OUTCOME_ALREADY_RECORDED=false
   case "$origin" in self|poll) ;; *) return 2 ;; esac
+  if [ "$origin" = poll ] && { [ -z "$poll_key" ] || [ -z "$poll_payload" ]; }; then
+    return 2
+  fi
   fm_pr_task_id_valid "$id" || return 2
   fm_pr_url_parse "$url" || return 2
+  provider=$FM_PR_PROVIDER
+  host=$FM_PR_HOST
+  path=$FM_PR_PATH
+  number=$FM_PR_NUMBER
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
 
   if self=$(fm_merge_outcome_home_id "$home"); then
@@ -107,23 +108,39 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
       *) return 3 ;;
     esac
     line="done [key=merged-$id]: merged $id $FM_PR_URL"
-    fm_merge_outcome_append_once "$destination" "$line" || return 1
   else
     self_rc=$?
     [ "$self_rc" -eq 1 ] || return 3
-    if [ "$origin" = self ]; then
-      _fm_merge_outcome_wake "$state" "merged-$id" \
-        "check: merge landed: $id $FM_PR_URL" || return 1
-    fi
   fi
 
-  # Only a self-performed merge has to claim the canonical identity: the poll
-  # path's caller owns that marker for the merge it detected. Failing to record
-  # it can cost a duplicate report later, which is not a reason to call a merge
-  # that IS reported unreported.
-  if [ "$origin" = self ]; then
-    fm_pr_poll_merge_mark_notified "$state" "$id" \
-      "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" || true
+  STATE=$state
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-wake-lib.sh"
+  lock="$state/$id.pr-poll-merge-notified.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if fm_pr_poll_merge_already_notified "$state" "$id" \
+    "$provider" "$host" "$path" "$number"; then
+    # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
+    FM_MERGE_OUTCOME_ALREADY_RECORDED=true
+    fm_lock_release "$lock"
+    return 0
   fi
-  return 0
+
+  if [ -n "$destination" ]; then
+    fm_merge_outcome_append_once "$destination" "$line" || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    if [ "$origin" = poll ]; then
+      fm_wake_append check "$poll_key" "$poll_payload" || status=1
+    elif [ -z "$destination" ]; then
+      fm_wake_append check "merged-$id" \
+        "check: merge landed: $id $FM_PR_URL" || status=1
+    fi
+  fi
+  if [ "$status" -eq 0 ]; then
+    fm_pr_poll_merge_mark_notified "$state" "$id" \
+      "$provider" "$host" "$path" "$number" || status=1
+  fi
+  fm_lock_release "$lock"
+  return "$status"
 }

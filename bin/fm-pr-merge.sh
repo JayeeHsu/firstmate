@@ -259,6 +259,16 @@ case "$PROVIDER" in
       merge_args=(--squash)
     fi
     gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+    github_state=
+    if ! github_state=$(gh-axi pr view "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
+      --json state --jq '.state' 2>/dev/null); then
+      printf 'actionable: GitHub accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
+        "$URL" >&2
+      exit 0
+    fi
+    if [ "$github_state" != MERGED ]; then
+      exit 0
+    fi
     ;;
   gitlab)
     gitlab_verify_mergeable || exit 1
@@ -275,9 +285,9 @@ case "$PROVIDER" in
     ;;
 esac
 
-# Reached only after the forge reported the merge landed: set -e exits on a
-# refused or failed merge above, so nothing is recorded for a merge that did
-# not happen.
+# Reached only after the forge confirmed the merge landed: set -e exits on a
+# refused or failed merge above, and a queued GitHub merge exits without an
+# outcome while its existing poll remains armed.
 outcome_rc=0
 fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self || outcome_rc=$?
 case "$outcome_rc" in
