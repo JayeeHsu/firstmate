@@ -3123,32 +3123,91 @@ test_merged_poll_retries_a_failed_upward_report() {
 }
 
 test_self_merge_and_poll_publish_one_outcome() {
-  local dir state replies url merge_pid merge_rc watcher_rc
+  local dir state replies url merge_pid merge_rc watcher_pid watcher_rc
+  local gate ready=0 poll_started=0 i
   url=https://github.com/o/r/pull/1
   dir=$(make_case merge-outcome-race)
   state="$dir/home/state"
   replies="$state/parent-replies.status"
+  gate="$dir/marker-gate"
   seed_secondmate_home "$dir"
   write_task_meta "$dir" task-a
   run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/seed.err" \
     || fail "merge-outcome-race: could not arm merge poll"
+  add_stop_custom_check "$dir"
+  cat >"$dir/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *pr-poll-merge-notified*)
+    if mkdir "$FM_TEST_MARKER_GATE.claim" 2>/dev/null; then
+      : >"$FM_TEST_MARKER_GATE.ready"
+      while [ ! -e "$FM_TEST_MARKER_GATE.release" ]; do sleep 0.02; done
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$dir/fakebin/mv"
+  export FM_TEST_MARKER_GATE=$gate
+  export FM_TEST_REAL_MV
+  FM_TEST_REAL_MV=$(command -v mv)
 
   set +e
   run_merge_entry "$dir" task-a "$url" >"$dir/merge.out" 2>"$dir/merge.err" &
   merge_pid=$!
-  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
-    >"$dir/watch.out" 2>"$dir/watch.err"
-  watcher_rc=$?
+  for i in $(seq 1 250); do
+    if [ -e "$gate.ready" ]; then
+      ready=1
+      break
+    fi
+    sleep 0.02
+  done
+  if [ "$ready" -ne 1 ]; then
+    : >"$gate.release"
+    wait "$merge_pid" 2>/dev/null
+    fail "merge-outcome-race: self reporter never paused before marker commit"
+  fi
+  : >"$dir/gh.log"
+  FM_TEST_GH_LOG="$dir/gh.log" FM_TEST_GH_STATE=MERGED \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" \
+      >"$dir/watch.out" 2>"$dir/watch.err" &
+  watcher_pid=$!
+  for i in $(seq 1 250); do
+    if [ -s "$dir/gh.log" ]; then
+      poll_started=1
+      break
+    fi
+    sleep 0.02
+  done
+  if [ "$poll_started" -ne 1 ]; then
+    : >"$gate.release"
+    wait "$merge_pid" 2>/dev/null
+    wait "$watcher_pid" 2>/dev/null
+    fail "merge-outcome-race: competing poll reporter never reached the merge"
+  fi
+  sleep 0.2
+  if [ -e "$state/.wake-queue" ]; then
+    : >"$gate.release"
+    wait "$merge_pid" 2>/dev/null
+    wait "$watcher_pid" 2>/dev/null
+    fail "merge-outcome-race: competing reporter published before marker commit"
+  fi
+  : >"$gate.release"
   wait "$merge_pid"
   merge_rc=$?
+  wait "$watcher_pid"
+  watcher_rc=$?
   set -e
+  unset FM_TEST_MARKER_GATE FM_TEST_REAL_MV
   [ "$watcher_rc" -eq 0 ] \
     || fail "merge-outcome-race: watcher failed: $(cat "$dir/watch.err")"
   [ "$merge_rc" -eq 0 ] \
     || fail "merge-outcome-race: merge entrypoint failed: $(cat "$dir/merge.err")"
   [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
     || fail "merge-outcome-race: concurrent self and poll reports produced duplicate outcomes"
-  pass "self-merge and poll publication serialize to one durable outcome"
+  assert_no_grep "check: $state/task-a.check.sh: merged" "$state/.wake-queue" \
+    "merge-outcome-race: competing poll published a second outcome"
+  pass "self-merge publication holds the competing poll through marker commit"
 }
 
 test_merged_poll_reports_upward_from_a_secondmate_home_once() {
