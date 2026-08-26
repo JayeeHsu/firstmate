@@ -567,6 +567,15 @@ test_valid_recording_and_merge_derivation() {
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
   grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/gh-axi.log" \
     || fail "merge wrapper did not preserve repository derivation and method"
+  # A merge this home performed leaves its own durable outcome, so the poll's
+  # confirmation is no longer the first the captain hears of it. Acknowledge that
+  # record before the watcher cycle below, which is what still retires the poll.
+  assert_grep 'https://github.com/my-org/repo_name.with-dots/pull/37' "$dir/home/state/.wake-queue" \
+    "a merge this home performed left no durable outcome"
+  ack_watcher_cycle "$dir/home/state" || fail "merge outcome acknowledgement failed"
+  # With the merge already reported, the poll's own detection is a duplicate the
+  # watcher absorbs, so this cycle needs its own reason to end.
+  add_stop_custom_check "$dir"
   set +e
   FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
   rc=$?
@@ -3048,6 +3057,58 @@ test_merged_poll_reregistration_after_notification_is_absorbed() {
   pass "a repeat identical merged poll for an already-notified task is absorbed, never queued as a main-blocking row"
 }
 
+# The captain merging a PR himself on the forge is the same outcome as a merge
+# this home performed: bin/fm-merge-outcome-lib.sh carries both to the parent on
+# the one reply channel, so no second watch path exists for the captain's case.
+# The poll's own durable row still lands here, because the mate that owns the
+# task still has to act on it.
+seed_secondmate_home() {  # <dir> [<route>]
+  local dir=$1 route=${2:-remote}
+  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=%s\n' "$route" \
+    > "$dir/home/.fm-secondmate-parent"
+}
+
+test_merged_poll_reports_upward_from_a_secondmate_home_once() {
+  local dir state rc replies url
+  url=https://github.com/o/r/pull/1
+  dir=$(make_case merged-poll-upward)
+  state="$dir/home/state"
+  replies="$state/parent-replies.status"
+  seed_secondmate_home "$dir"
+  write_poll_meta "$state" task-a "$url"
+  seed_canonical_poll "$dir" task-a "$url"
+  add_stop_custom_check "$dir"
+
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch-1.out" 2> "$dir/watch-1.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "merged-poll-upward: watcher failed: $(cat "$dir/watch-1.err")"
+  case "$(cat "$dir/watch-1.out")" in
+    check:*task-a.check.sh:*merged) ;;
+    *) fail "merged-poll-upward: the poll's own row was lost: $(cat "$dir/watch-1.out")" ;;
+  esac
+  assert_grep "done [key=merged-task-a]: merged task-a $url" "$replies" \
+    "merged-poll-upward: a merge this home did not perform was never reported upward"
+  [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
+    || fail "merged-poll-upward: one detected merge produced more than one upward line"
+  ack_watcher_cycle "$state" || fail "merged-poll-upward: acknowledgement failed"
+
+  # Re-registered for the same, already-reported merge: the absorbed duplicate
+  # must not tell the parent a second time either.
+  seed_canonical_poll "$dir" task-a "$url"
+  rm -f "$state/.last-check"
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch-2.out" 2> "$dir/watch-2.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "merged-poll-upward: second watcher cycle failed: $(cat "$dir/watch-2.err")"
+  [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
+    || fail "merged-poll-upward: an absorbed duplicate detection reported the merge again"
+  pass "a merge detected by the poll is reported upward from a secondmate home exactly once"
+}
+
 test_different_merged_pr_for_same_task_is_not_absorbed() {
   local dir state rc
   dir=$(make_case different-merged-pr-not-absorbed)
@@ -3467,6 +3528,7 @@ test_parser_matrix
 test_gitlab_merge_watch
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed
+test_merged_poll_reports_upward_from_a_secondmate_home_once
 test_different_merged_pr_for_same_task_is_not_absorbed
 test_persistent_secondmate_retirement_is_poll_only
 test_retirement_crash_recovery

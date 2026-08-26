@@ -24,6 +24,13 @@
 #   (o) glab or jq absent refuses before any state is recorded
 #   (p) --sha in extra GitLab args fails fast, and still forwards on GitHub
 #   (q) a GitLab refusal still leaves pr= recorded and the merge poll armed
+#   (r) a successful merge in a secondmate home reports the landed PR upward
+#       once, on the route its parent binding names, and a repeat merge of the
+#       same PR does not duplicate that line
+#   (s) a refused or failed merge reports nothing
+#   (t) a successful merge in a main home leaves a durable wake naming the PR
+#   (u) a secondmate home with no usable parent binding says so loudly instead
+#       of merging in silence
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -215,6 +222,7 @@ glab_merge_line() {
 run_pr_merge() {
   local case_dir=$1 rc; shift
   FM_ROOT_OVERRIDE="$ROOT" \
+  FM_HOME="${FM_TEST_HOME:-$ROOT}" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_TEST_GH_AXI_LOG="$case_dir/gh-axi.log" \
   FM_TEST_GLAB_LOG="$case_dir/glab.log" \
@@ -810,6 +818,176 @@ test_github_still_forwards_sha_arg() {
   pass "fm-pr-merge leaves GitHub extra-arg handling unchanged, including --sha"
 }
 
+
+# --- durable merge outcome ---------------------------------------------------
+# A merge that lands must leave a record outside the merging agent's memory.
+# bin/fm-merge-outcome-lib.sh owns where that record goes; these cases pin the
+# behavior through the real merge entrypoint.
+
+# make_home_case <name> [<route> [<parent-home>]]: a case dir whose home is a
+# secondmate home bound to a parent, or a plain main home when no route is
+# given. Echoes the case dir; the home is "$case_dir/home".
+make_home_case() {
+  local name=$1 route=${2:-} parent=${3:-} case_dir home
+  case_dir=$(make_case "$name")
+  home="$case_dir/home"
+  mkdir -p "$home" "$case_dir/wt"
+  if [ -n "$route" ]; then
+    printf '%s\n' mate-x >"$home/.fm-secondmate-home"
+    {
+      printf 'schema=fm-secondmate-parent.v1\n'
+      printf 'route=%s\n' "$route"
+      [ "$route" != local ] || printf 'parent_home=%s\n' "$parent"
+    } >"$home/.fm-secondmate-parent"
+  fi
+  printf '%s\n' "$case_dir"
+}
+
+parent_reply_lines() {  # <file> <url>
+  grep -c -F "$2" "$1" 2>/dev/null || true
+}
+
+test_secondmate_merge_reports_upward_once() {
+  local case_dir replies url
+  url=https://github.com/example/repo/pull/61
+  case_dir=$(make_home_case secondmate-merge-reports remote)
+  add_gh_mocks "$case_dir" 5555555555555555555555555555555555555555
+  : >"$case_dir/gh-axi.log"
+  replies="$case_dir/state/parent-replies.status"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr" || fail "secondmate-merge-reports: merge failed"
+
+  assert_grep "done [key=merged-task-x1]: merged task-x1 $url" "$replies" \
+    "secondmate-merge-reports: the landed PR was not reported upward"
+  [ "$(wc -l <"$replies")" -eq 1 ] \
+    || fail "secondmate-merge-reports: one merge produced more than one upward line"
+
+  # The same merge again: the forge accepts it in this fixture, so only the
+  # at-most-once contract can keep the parent from being told twice.
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout2" 2>"$case_dir/stderr2" || fail "secondmate-merge-reports: repeat merge failed"
+  [ "$(parent_reply_lines "$replies" "$url")" -eq 1 ] \
+    || fail "secondmate-merge-reports: a repeat merge of the same PR duplicated the upward line"
+  pass "a merge a secondmate home performs itself is reported upward exactly once"
+}
+
+test_secondmate_merge_reports_on_the_local_route() {
+  local case_dir parent_status url
+  url=https://github.com/example/repo/pull/62
+  case_dir=$(make_home_case secondmate-merge-local local "$TMP_ROOT/secondmate-merge-local/parent")
+  mkdir -p "$TMP_ROOT/secondmate-merge-local/parent/state"
+  add_gh_mocks "$case_dir" 6666666666666666666666666666666666666666
+  : >"$case_dir/gh-axi.log"
+  parent_status="$TMP_ROOT/secondmate-merge-local/parent/state/mate-x.status"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr" || fail "secondmate-merge-local: merge failed"
+
+  assert_grep "done [key=merged-task-x1]: merged task-x1 $url" "$parent_status" \
+    "secondmate-merge-local: the landed PR did not reach the parent home's channel"
+  [ ! -e "$case_dir/state/parent-replies.status" ] \
+    || fail "secondmate-merge-local: a local-route report also wrote the remote reply channel"
+  pass "a locally routed secondmate home reports the landed PR into its parent's own channel"
+}
+
+test_failed_merge_reports_nothing() {
+  local case_dir rc
+  case_dir=$(make_home_case failed-merge-silent remote)
+  add_gh_mocks_merge_fails "$case_dir"
+  : >"$case_dir/gh-axi.log"
+
+  set +e
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/63 \
+    >"$case_dir/stdout" 2>"$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "failed-merge-silent: a failed merge should propagate"
+  assert_absent "$case_dir/state/parent-replies.status" \
+    "failed-merge-silent: a merge that never landed was reported as landed"
+  pass "a refused or failed merge reports no outcome"
+}
+
+test_gitlab_refusal_reports_nothing() {
+  local case_dir rc
+  case_dir=$(make_gitlab_case gitlab-refusal-silent state=merged)
+  mkdir -p "$case_dir/home"
+  printf '%s\n' mate-x >"$case_dir/home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=remote\n' >"$case_dir/home/.fm-secondmate-parent"
+
+  set +e
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "gitlab-refusal-silent: a refused GitLab merge should exit non-zero"
+  assert_absent "$case_dir/state/parent-replies.status" \
+    "gitlab-refusal-silent: a refused merge request was reported as landed"
+  pass "a GitLab merge refused before the forge call reports no outcome"
+}
+
+test_gitlab_merge_reports_upward() {
+  local case_dir url
+  case_dir=$(make_gitlab_case gitlab-merge-reports)
+  mkdir -p "$case_dir/home"
+  printf '%s\n' mate-x >"$case_dir/home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=remote\n' >"$case_dir/home/.fm-secondmate-parent"
+  url=$MR_URL
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr" || fail "gitlab-merge-reports: merge failed"
+
+  assert_grep "done [key=merged-task-x1]: merged task-x1 $url" \
+    "$case_dir/state/parent-replies.status" \
+    "gitlab-merge-reports: a landed merge request was not reported upward"
+  pass "a landed GitLab merge request is reported upward on the same channel"
+}
+
+test_main_home_merge_leaves_a_durable_wake() {
+  local case_dir url
+  url=https://github.com/example/repo/pull/64
+  case_dir=$(make_home_case main-merge-wake)
+  add_gh_mocks "$case_dir" 7777777777777777777777777777777777777777
+  : >"$case_dir/gh-axi.log"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr" || fail "main-merge-wake: merge failed"
+
+  assert_grep "$url" "$case_dir/state/.wake-queue" \
+    "main-merge-wake: a merge this home performed left no durable record naming the PR"
+  [ "$(grep -c -F "$url" "$case_dir/state/.wake-queue")" -eq 1 ] \
+    || fail "main-merge-wake: one merge produced more than one durable record"
+  assert_absent "$case_dir/state/parent-replies.status" \
+    "main-merge-wake: a main home wrote a parent reply channel it does not have"
+  pass "a merge a main home performs itself leaves one durable wake naming the PR"
+}
+
+test_secondmate_without_parent_binding_is_loud() {
+  local case_dir rc url
+  url=https://github.com/example/repo/pull/65
+  case_dir=$(make_home_case unbound-secondmate)
+  add_gh_mocks "$case_dir" 8888888888888888888888888888888888888888
+  : >"$case_dir/gh-axi.log"
+  # A secondmate identity with no parent binding: exactly the seeding gap that
+  # let three real merges land in silence.
+  printf '%s\n' mate-x >"$case_dir/home/.fm-secondmate-home"
+
+  set +e
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "unbound-secondmate: the merge itself landed and must not be reported as failed"
+  assert_grep 'could not report it upward' "$case_dir/stderr" \
+    "unbound-secondmate: a merge that could not be reported upward said nothing about it"
+  assert_absent "$case_dir/state/.wake-queue" \
+    "unbound-secondmate: a secondmate home fell back to the main-home record"
+  pass "a secondmate home that cannot report upward says so instead of merging in silence"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -834,3 +1012,10 @@ test_gitlab_unreadable_state_refuses
 test_gitlab_invalid_head_refuses
 test_gitlab_missing_tool_refuses_before_recording
 test_gitlab_head_override_args_refuse_before_recording
+test_secondmate_merge_reports_upward_once
+test_secondmate_merge_reports_on_the_local_route
+test_gitlab_merge_reports_upward
+test_failed_merge_reports_nothing
+test_gitlab_refusal_reports_nothing
+test_main_home_merge_leaves_a_durable_wake
+test_secondmate_without_parent_binding_is_loud

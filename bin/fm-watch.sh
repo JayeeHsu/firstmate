@@ -101,6 +101,11 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# Single owner of the durable merge-outcome record, shared with
+# bin/fm-pr-merge.sh so a merge this home performed and a merge someone else
+# performed on the forge reach the captain through one channel in one shape.
+# shellcheck source=bin/fm-merge-outcome-lib.sh
+. "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
 # shellcheck source=bin/fm-x-lib.sh
 . "$SCRIPT_DIR/fm-x-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
@@ -1247,6 +1252,17 @@ while :; do
         fi
         fm_wake_append check "$c" "$reason" || exit 1
         if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
+          # The row above is this home's own durable record of the merge. A
+          # secondmate home owes its parent the same outcome, and this is the
+          # merge nobody here performed - the captain's own forge merge - so it
+          # travels the one merge-outcome channel bin/fm-pr-merge.sh uses rather
+          # than a second reporting path. In a main home the row above already
+          # is the captain's record, so the report is a no-op there.
+          merge_outcome_rc=0
+          fm_merge_outcome_report "$FM_HOME" "$STATE" "$id" "$url" poll \
+            || merge_outcome_rc=$?
+          [ "$merge_outcome_rc" -eq 0 ] \
+            || triage_log "merge outcome for $id could not be reported upward (rc=$merge_outcome_rc)"
           fm_pr_poll_merge_mark_notified "$STATE" "$id" \
             "$provider" "$host" "$path" "$number" \
             || triage_log "merge notification receipt could not be recorded for $id"
