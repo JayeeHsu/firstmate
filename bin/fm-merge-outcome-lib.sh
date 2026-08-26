@@ -78,7 +78,7 @@ FM_MERGE_OUTCOME_ALREADY_RECORDED=false
 # than treat it as success: the merge landed and the record did not.
 fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
   local home=$1 state=$2 id=$3 url=$4 origin=$5
-  local self='' self_rc=0 destination='' line lock status=0 marker_committed=0
+  local self='' self_rc=0 destination='' line lock status=0
   local provider host path number
   # shellcheck disable=SC2034 # Sourced wake helpers consume these scoped globals.
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
@@ -121,21 +121,16 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
     return 0
   fi
 
-  if fm_pr_poll_merge_mark_notified "$state" "$id" \
-    "$provider" "$host" "$path" "$number"; then
-    marker_committed=1
-  else
-    status=1
-  fi
-  if [ "$status" -eq 0 ] && [ -n "$destination" ]; then
+  if [ -n "$destination" ]; then
     fm_merge_outcome_append_once "$destination" "$line" || status=1
   fi
   if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then
     fm_wake_append check "merged-$id" \
       "check: merge landed: $id $FM_PR_URL" || status=1
   fi
-  if [ "$status" -ne 0 ] && [ "$marker_committed" -eq 1 ]; then
-    fm_pr_poll_merge_notified_remove "$state" "$id" || true
+  if [ "$status" -eq 0 ]; then
+    fm_pr_poll_merge_mark_notified "$state" "$id" \
+      "$provider" "$host" "$path" "$number" || status=1
   fi
   fm_lock_release "$lock"
   return "$status"

@@ -33,7 +33,7 @@
 #       of merging in silence
 #   (v) an accepted queued GitHub merge emits nothing and leaves its poll armed
 #   (w) an accepted queued GitLab merge emits nothing and leaves its poll armed
-#   (x) an uncommitted wake retry does not append a duplicate outcome
+#   (x) an uncommitted marker retry never loses the durable outcome
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -1016,8 +1016,8 @@ test_queued_github_merge_leaves_the_poll_armed() {
   pass "a queued GitHub merge stays silent and leaves confirmation to the armed poll"
 }
 
-test_uncommitted_wake_retry_is_idempotent() {
-  local case_dir url
+test_uncommitted_marker_retry_is_never_silent() {
+  local case_dir url count
   url=https://github.com/example/repo/pull/67
   case_dir=$(make_home_case uncommitted-wake-retry)
   add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -1045,8 +1045,9 @@ SH
     "uncommitted-wake-retry: failed marker commit was not loud"
   [ -f "$case_dir/state/task-x1.check.sh" ] \
     || fail "uncommitted-wake-retry: failed commit disarmed the retry poll"
-  [ ! -e "$case_dir/state/.wake-queue" ] \
-    || fail "uncommitted-wake-retry: failed marker commit published an outcome"
+  count=$(grep -c -F "$url" "$case_dir/state/.wake-queue")
+  [ "$count" -ge 1 ] \
+    || fail "uncommitted-wake-retry: failed marker commit lost the durable outcome"
   [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
     || fail "uncommitted-wake-retry: failed marker commit was treated as complete"
 
@@ -1054,11 +1055,12 @@ SH
     >"$case_dir/stdout-2" 2>"$case_dir/stderr-2" \
     || fail "uncommitted-wake-retry: retry failed"
   unset FM_TEST_MARKER_FAILURE FM_TEST_REAL_MV
-  [ "$(grep -c -F "$url" "$case_dir/state/.wake-queue")" -eq 1 ] \
-    || fail "uncommitted-wake-retry: retry appended a duplicate outcome"
+  count=$(grep -c -F "$url" "$case_dir/state/.wake-queue")
+  [ "$count" -ge 1 ] \
+    || fail "uncommitted-wake-retry: retry left the merge silent"
   [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
     || fail "uncommitted-wake-retry: retry did not commit the canonical marker"
-  pass "an uncommitted wake retries without appending a duplicate outcome"
+  pass "an uncommitted marker retry preserves at least one durable outcome"
 }
 
 test_secondmate_without_parent_binding_is_loud() {
@@ -1117,5 +1119,5 @@ test_failed_merge_reports_nothing
 test_gitlab_refusal_reports_nothing
 test_main_home_merge_leaves_a_durable_wake
 test_queued_github_merge_leaves_the_poll_armed
-test_uncommitted_wake_retry_is_idempotent
+test_uncommitted_marker_retry_is_never_silent
 test_secondmate_without_parent_binding_is_loud
