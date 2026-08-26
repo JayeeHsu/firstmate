@@ -32,6 +32,8 @@
 #   (u) a secondmate home with no usable parent binding says so loudly instead
 #       of merging in silence
 #   (v) an accepted queued GitHub merge emits nothing and leaves its poll armed
+#   (w) an accepted queued GitLab merge emits nothing and leaves its poll armed
+#   (x) an uncommitted wake retry does not append a duplicate outcome
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -130,11 +132,16 @@ case_dir=$(dirname "$FM_TEST_GLAB_JSON")
 case "${1:-} ${2:-}" in
   "mr view")
     [ ! -e "$case_dir/glab-view-fails" ] || exit 1
-    cat "$FM_TEST_GLAB_JSON"
+    if [ -e "$case_dir/glab-merge-called" ] && [ ! -e "$case_dir/glab-stays-open" ]; then
+      cat "$case_dir/mr-post.json"
+    else
+      cat "$FM_TEST_GLAB_JSON"
+    fi
     exit 0
     ;;
   "mr merge")
     [ ! -e "$case_dir/glab-merge-fails" ] || { echo "error: mr merge failed" >&2 ; exit 1 ; }
+    : > "$case_dir/glab-merge-called"
     exit 0
     ;;
 esac
@@ -189,6 +196,7 @@ make_gitlab_case() {
   : > "$case_dir/gh-axi.log"
   : > "$case_dir/glab.log"
   write_mr_json "$case_dir/mr.json" "$@"
+  write_mr_json "$case_dir/mr-post.json" state=merged
   printf '%s\n' "$case_dir"
 }
 
@@ -949,6 +957,25 @@ test_gitlab_merge_reports_upward() {
   pass "a landed GitLab merge request is reported upward on the same channel"
 }
 
+test_queued_gitlab_merge_leaves_the_poll_armed() {
+  local case_dir
+  case_dir=$(make_gitlab_case queued-gitlab-merge)
+  mkdir -p "$case_dir/home"
+  : >"$case_dir/glab-stays-open"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    >"$case_dir/stdout" 2>"$case_dir/stderr" \
+    || fail "queued-gitlab-merge: accepted merge command failed"
+
+  assert_absent "$case_dir/state/.wake-queue" \
+    "queued-gitlab-merge: a queued merge was reported as landed"
+  [ -f "$case_dir/state/task-x1.check.sh" ] \
+    || fail "queued-gitlab-merge: the merge poll was not left armed"
+  [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
+    || fail "queued-gitlab-merge: a queued merge was marked as reported"
+  pass "a queued GitLab merge stays silent and leaves confirmation to the armed poll"
+}
+
 test_main_home_merge_leaves_a_durable_wake() {
   local case_dir url
   url=https://github.com/example/repo/pull/64
@@ -987,6 +1014,47 @@ test_queued_github_merge_leaves_the_poll_armed() {
   [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
     || fail "queued-github-merge: a queued merge was marked as reported"
   pass "a queued GitHub merge stays silent and leaves confirmation to the armed poll"
+}
+
+test_uncommitted_wake_retry_is_idempotent() {
+  local case_dir url
+  url=https://github.com/example/repo/pull/67
+  case_dir=$(make_home_case uncommitted-wake-retry)
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  : >"$case_dir/gh-axi.log"
+  cat >"$case_dir/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+case "${!#}" in
+  *.pr-poll-merge-notified)
+    if mkdir "$FM_TEST_MARKER_FAILURE.claim" 2>/dev/null; then
+      exit 1
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$case_dir/fakebin/mv"
+  export FM_TEST_MARKER_FAILURE="$case_dir/marker-failure"
+  export FM_TEST_REAL_MV
+  FM_TEST_REAL_MV=$(command -v mv)
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout-1" 2>"$case_dir/stderr-1" \
+    || fail "uncommitted-wake-retry: landed merge was reported as failed"
+  assert_grep 'could not record the outcome' "$case_dir/stderr-1" \
+    "uncommitted-wake-retry: failed marker commit was not loud"
+  [ -f "$case_dir/state/task-x1.check.sh" ] \
+    || fail "uncommitted-wake-retry: failed commit disarmed the retry poll"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    >"$case_dir/stdout-2" 2>"$case_dir/stderr-2" \
+    || fail "uncommitted-wake-retry: retry failed"
+  unset FM_TEST_MARKER_FAILURE FM_TEST_REAL_MV
+  [ "$(grep -c -F "$url" "$case_dir/state/.wake-queue")" -eq 1 ] \
+    || fail "uncommitted-wake-retry: retry appended a duplicate outcome"
+  [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
+    || fail "uncommitted-wake-retry: retry did not commit the canonical marker"
+  pass "an uncommitted wake retries without appending a duplicate outcome"
 }
 
 test_secondmate_without_parent_binding_is_loud() {
@@ -1040,8 +1108,10 @@ test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route
 test_gitlab_merge_reports_upward
+test_queued_gitlab_merge_leaves_the_poll_armed
 test_failed_merge_reports_nothing
 test_gitlab_refusal_reports_nothing
 test_main_home_merge_leaves_a_durable_wake
 test_queued_github_merge_leaves_the_poll_armed
+test_uncommitted_wake_retry_is_idempotent
 test_secondmate_without_parent_binding_is_loud

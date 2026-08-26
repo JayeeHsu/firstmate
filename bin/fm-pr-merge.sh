@@ -252,6 +252,24 @@ FIELDS
   FM_PR_MERGE_HEAD=$live_head
 }
 
+gitlab_confirm_merged() {
+  local json state
+  if ! json=$(GITLAB_HOST="$FM_PR_HOST" glab mr view "$PR_NUMBER" \
+    -R "$PROJECT_URL" -F json 2>/dev/null) || [ -z "$json" ]; then
+    printf 'actionable: GitLab accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
+      "$URL" >&2
+    return 2
+  fi
+  if ! state=$(printf '%s' "$json" | jq -r \
+    'if type == "object" and (.state | type == "string") then .state else error("invalid state") end' \
+    2>/dev/null); then
+    printf 'actionable: GitLab accepted the merge request for %s but its landed state could not be confirmed; the merge poll remains armed\n' \
+      "$URL" >&2
+    return 2
+  fi
+  [ "$state" = merged ]
+}
+
 case "$PROVIDER" in
   github)
     merge_args=()
@@ -278,6 +296,9 @@ case "$PROVIDER" in
     # the conditions above are what authorize the merge.
     GITLAB_HOST="$FM_PR_HOST" glab mr merge "$PR_NUMBER" -R "$PROJECT_URL" \
       --sha "$FM_PR_MERGE_HEAD" --yes "$@"
+    gitlab_confirm_rc=0
+    gitlab_confirm_merged || gitlab_confirm_rc=$?
+    [ "$gitlab_confirm_rc" -eq 0 ] || exit 0
     ;;
   *)
     echo "error: invalid PR merge request" >&2
@@ -286,7 +307,7 @@ case "$PROVIDER" in
 esac
 
 # Reached only after the forge confirmed the merge landed: set -e exits on a
-# refused or failed merge above, and a queued GitHub merge exits without an
+# refused or failed merge above, and a queued forge merge exits without an
 # outcome while its existing poll remains armed.
 outcome_rc=0
 fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self || outcome_rc=$?
