@@ -125,7 +125,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
     fm_merge_outcome_append_once "$destination" "$line" || status=1
   fi
   if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then
-    fm_wake_append check "merged-$id" \
+    fm_wake_append check "merged-$id-$FM_PR_URL" \
       "check: merge landed: $id $FM_PR_URL" || status=1
   fi
   if [ "$status" -eq 0 ]; then

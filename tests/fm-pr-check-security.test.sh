@@ -3287,7 +3287,8 @@ test_different_merged_pr_for_same_task_is_not_absorbed() {
     check:*task-a.check.sh:*merged) ;;
     *) fail "a different PR merge was absorbed: $(cat "$dir/watch-2.out")" ;;
   esac
-  grep -F "$(printf '\tcheck\tmerged-task-a\t')" "$state/.wake-queue" >/dev/null 2>&1 \
+  grep -F "$(printf '\tcheck\tmerged-task-a-https://github.com/o/r/pull/2\t')" \
+    "$state/.wake-queue" >/dev/null 2>&1 \
     || fail "the different PR merge did not create a main-blocking wake row"
   fm_pr_poll_merge_already_notified "$state" task-a github github.com o/r 2 \
     || fail "the marker was not advanced to the different PR identity"

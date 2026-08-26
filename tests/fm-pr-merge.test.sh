@@ -34,6 +34,7 @@
 #   (v) an accepted queued GitHub merge emits nothing and leaves its poll armed
 #   (w) an accepted queued GitLab merge emits nothing and leaves its poll armed
 #   (x) an uncommitted marker retry never loses the durable outcome
+#   (y) distinct merged PRs for a reused task each survive queue deduplication
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -1019,6 +1020,38 @@ test_queued_github_merge_leaves_the_poll_armed() {
   pass "a queued GitHub merge stays silent and leaves confirmation to the armed poll"
 }
 
+test_distinct_merged_prs_keep_distinct_wakes() {
+  local case_dir first_url second_url
+  first_url=https://github.com/example/repo/pull/68
+  second_url=https://github.com/example/repo/pull/69
+  case_dir=$(make_home_case distinct-merge-wakes)
+  add_gh_mocks "$case_dir" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  : >"$case_dir/gh-axi.log"
+
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$first_url" \
+    >"$case_dir/stdout-1" 2>"$case_dir/stderr-1" \
+    || fail "distinct-merge-wakes: first merge failed"
+  rm -f "$case_dir/state/task-x1.check.sh" \
+    "$case_dir/state/task-x1.pr-poll" \
+    "$case_dir/state/task-x1.pr-poll-registration"
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$second_url" \
+    >"$case_dir/stdout-2" 2>"$case_dir/stderr-2" \
+    || fail "distinct-merge-wakes: second merge failed"
+
+  [ "$(grep -c -F "$first_url" "$case_dir/state/.wake-queue")" -eq 1 ] \
+    || fail "distinct-merge-wakes: first merge wake was missing or duplicated"
+  [ "$(grep -c -F "$second_url" "$case_dir/state/.wake-queue")" -eq 1 ] \
+    || fail "distinct-merge-wakes: second merge wake was missing or duplicated"
+  FM_STATE_OVERRIDE="$case_dir/state" "$ROOT/bin/fm-wake-drain.sh" \
+    >"$case_dir/drain.out" 2>"$case_dir/drain.err" \
+    || fail "distinct-merge-wakes: wake drain failed"
+  assert_grep "$first_url" "$case_dir/drain.out" \
+    "distinct-merge-wakes: queue deduplication collapsed the first PR"
+  assert_grep "$second_url" "$case_dir/drain.out" \
+    "distinct-merge-wakes: queue deduplication collapsed the second PR"
+  pass "distinct merged PRs for one task retain distinct captain-facing wakes"
+}
+
 test_uncommitted_marker_retry_is_never_silent() {
   local case_dir url count
   url=https://github.com/example/repo/pull/67
@@ -1122,5 +1155,6 @@ test_failed_merge_reports_nothing
 test_gitlab_refusal_reports_nothing
 test_main_home_merge_leaves_a_durable_wake
 test_queued_github_merge_leaves_the_poll_armed
+test_distinct_merged_prs_keep_distinct_wakes
 test_uncommitted_marker_retry_is_never_silent
 test_secondmate_without_parent_binding_is_loud
