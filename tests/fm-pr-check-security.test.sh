@@ -3128,91 +3128,84 @@ test_merged_poll_retries_a_failed_upward_report() {
 }
 
 test_self_merge_and_poll_publish_one_outcome() {
-  local dir state replies url merge_pid merge_rc watcher_pid watcher_rc
-  local gate ready=0 poll_started=0 i
+  local dir state replies url rc
   url=https://github.com/o/r/pull/1
-  dir=$(make_case merge-outcome-race)
+
+  # Interleaving one: self publication commits before the poll observes the
+  # merge, so the poll absorbs the committed identity without reporting again.
+  dir=$(make_case merge-outcome-committed)
   state="$dir/home/state"
   replies="$state/parent-replies.status"
-  gate="$dir/marker-gate"
   seed_secondmate_home "$dir"
   write_task_meta "$dir" task-a
   run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/seed.err" \
-    || fail "merge-outcome-race: could not arm merge poll"
+    || fail "merge-outcome-committed: could not arm merge poll"
+  run_merge_entry "$dir" task-a "$url" >"$dir/merge.out" 2>"$dir/merge.err" \
+    || fail "merge-outcome-committed: merge entrypoint failed: $(cat "$dir/merge.err")"
   add_stop_custom_check "$dir"
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+    >"$dir/watch.out" 2>"$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] \
+    || fail "merge-outcome-committed: watcher failed: $(cat "$dir/watch.err")"
+  [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
+    || fail "merge-outcome-committed: self and poll reports produced duplicate outcomes"
+  assert_no_grep "check: $state/task-a.check.sh: merged" "$state/.wake-queue" \
+    "merge-outcome-committed: absorbed poll published a second outcome"
+  assert_poll_absent "$state" task-a
+
+  # Interleaving two: self publication lands but its marker commit fails. After
+  # that outcome is drained, the still-armed poll must publish it again rather
+  # than treating the interrupted attempt as complete and going silent.
+  dir=$(make_case merge-outcome-uncommitted)
+  state="$dir/home/state"
+  write_task_meta "$dir" task-a
+  run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/seed.err" \
+    || fail "merge-outcome-uncommitted: could not arm merge poll"
   cat >"$dir/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
-  *pr-poll-merge-notified*)
-    if mkdir "$FM_TEST_MARKER_GATE.claim" 2>/dev/null; then
-      : >"$FM_TEST_MARKER_GATE.ready"
-      while [ ! -e "$FM_TEST_MARKER_GATE.release" ]; do sleep 0.02; done
-    fi
-    ;;
+  *pr-poll-merge-notified*) exit 1 ;;
 esac
 exec "$FM_TEST_REAL_MV" "$@"
 SH
   chmod +x "$dir/fakebin/mv"
-  export FM_TEST_MARKER_GATE=$gate
-  export FM_TEST_REAL_MV
-  FM_TEST_REAL_MV=$(command -v mv)
+  set +e
+  FM_TEST_REAL_MV="$REAL_MV" run_merge_entry "$dir" task-a "$url" \
+    >"$dir/merge.out" 2>"$dir/merge.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] \
+    || fail "merge-outcome-uncommitted: landed merge was reported as failed"
+  assert_grep "$url" "$state/.wake-queue" \
+    "merge-outcome-uncommitted: interrupted publication emitted no outcome"
+  [ ! -e "$state/task-a.pr-poll-merge-notified" ] \
+    || fail "merge-outcome-uncommitted: failed marker commit was treated as complete"
+  ack_watcher_cycle "$state" \
+    || fail "merge-outcome-uncommitted: could not drain the first outcome"
+  assert_no_grep "$url" "$state/.wake-queue" \
+    "merge-outcome-uncommitted: first outcome remained queued after its drain"
+  rm -f "$dir/fakebin/mv" "$state/.last-check"
 
   set +e
-  run_merge_entry "$dir" task-a "$url" >"$dir/merge.out" 2>"$dir/merge.err" &
-  merge_pid=$!
-  for i in $(seq 1 250); do
-    if [ -e "$gate.ready" ]; then
-      ready=1
-      break
-    fi
-    sleep 0.02
-  done
-  if [ "$ready" -ne 1 ]; then
-    : >"$gate.release"
-    wait "$merge_pid" 2>/dev/null
-    fail "merge-outcome-race: self reporter never paused before marker commit"
-  fi
-  : >"$dir/gh.log"
-  FM_TEST_GH_LOG="$dir/gh.log" FM_TEST_GH_STATE=MERGED \
-    run_watcher_bounded "$dir/home" "$dir/fakebin" \
-      >"$dir/watch.out" 2>"$dir/watch.err" &
-  watcher_pid=$!
-  for i in $(seq 1 250); do
-    if [ -s "$dir/gh.log" ]; then
-      poll_started=1
-      break
-    fi
-    sleep 0.02
-  done
-  if [ "$poll_started" -ne 1 ]; then
-    : >"$gate.release"
-    wait "$merge_pid" 2>/dev/null
-    wait "$watcher_pid" 2>/dev/null
-    fail "merge-outcome-race: competing poll reporter never reached the merge"
-  fi
-  sleep 0.2
-  if [ -e "$state/.wake-queue" ]; then
-    : >"$gate.release"
-    wait "$merge_pid" 2>/dev/null
-    wait "$watcher_pid" 2>/dev/null
-    fail "merge-outcome-race: competing reporter published before marker commit"
-  fi
-  : >"$gate.release"
-  wait "$merge_pid"
-  merge_rc=$?
-  wait "$watcher_pid"
-  watcher_rc=$?
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+    >"$dir/watch.out" 2>"$dir/watch.err"
+  rc=$?
   set -e
-  unset FM_TEST_MARKER_GATE FM_TEST_REAL_MV
-  [ "$watcher_rc" -eq 0 ] \
-    || fail "merge-outcome-race: watcher failed: $(cat "$dir/watch.err")"
-  [ "$merge_rc" -eq 0 ] \
-    || fail "merge-outcome-race: merge entrypoint failed: $(cat "$dir/merge.err")"
-  [ "$(grep -c -F "$url" "$replies")" -eq 1 ] \
-    || fail "merge-outcome-race: concurrent self and poll reports produced duplicate outcomes"
-  assert_no_grep "check: $state/task-a.check.sh: merged" "$state/.wake-queue" \
-    "merge-outcome-race: competing poll published a second outcome"
-  pass "self-merge publication holds the competing poll through marker commit"
+  [ "$rc" -eq 0 ] \
+    || fail "merge-outcome-uncommitted: poll retry failed: $(cat "$dir/watch.err")"
+  case "$(cat "$dir/watch.out")" in
+    check:*task-a.check.sh:*merged) ;;
+    *) fail "merge-outcome-uncommitted: poll retry did not re-emit the outcome" ;;
+  esac
+  assert_grep "$url" "$state/.wake-queue" \
+    "merge-outcome-uncommitted: drained outcome was not durably re-emitted"
+  fm_pr_poll_merge_already_notified "$state" task-a github github.com o/r 1 \
+    || fail "merge-outcome-uncommitted: successful retry did not commit the marker"
+  assert_poll_absent "$state" task-a
+  pass "staged self-merge and poll interleavings are never silent"
 }
 
 test_merged_poll_reports_upward_from_a_secondmate_home_once() {
