@@ -585,6 +585,8 @@ test_valid_recording_and_merge_derivation() {
   set -e
   [ "$rc" -eq 0 ] || fail "guarded merge poll retirement failed: $(cat "$dir/merged-watch.err")"
   assert_poll_absent "$dir/home/state" task-a
+  assert_no_grep "merged-task-a" "$dir/home/state/.wake-queue" \
+    "the drained self-merge outcome was republished by its poll"
   grep -qxF 'pr=https://github.com/my-org/repo_name.with-dots/pull/37' "$dir/home/state/task-a.meta" \
     || fail "guarded merge retirement removed pr metadata"
   grep -qxF "pr_head=$expected" "$dir/home/state/task-a.meta" \
@@ -3282,7 +3284,7 @@ test_different_merged_pr_for_same_task_is_not_absorbed() {
     check:*task-a.check.sh:*merged) ;;
     *) fail "a different PR merge was absorbed: $(cat "$dir/watch-2.out")" ;;
   esac
-  grep -F "$(printf '\tcheck\t%s/task-a.check.sh\t' "$state")" "$state/.wake-queue" >/dev/null 2>&1 \
+  grep -F "$(printf '\tcheck\tmerged-task-a\t')" "$state/.wake-queue" >/dev/null 2>&1 \
     || fail "the different PR merge did not create a main-blocking wake row"
   fm_pr_poll_merge_already_notified "$state" task-a github github.com o/r 2 \
     || fail "the marker was not advanced to the different PR identity"

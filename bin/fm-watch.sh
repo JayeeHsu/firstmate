@@ -1238,7 +1238,7 @@ while :; do
         if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
           merge_outcome_rc=0
           fm_merge_outcome_report "$FM_HOME" "$STATE" "$id" "$url" poll \
-            "$c" "$reason" || merge_outcome_rc=$?
+            || merge_outcome_rc=$?
           if [ "$merge_outcome_rc" -ne 0 ]; then
             triage_log "merge outcome for $id could not be recorded (rc=$merge_outcome_rc)"
             exit 1

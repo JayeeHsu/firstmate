@@ -1045,6 +1045,10 @@ SH
     "uncommitted-wake-retry: failed marker commit was not loud"
   [ -f "$case_dir/state/task-x1.check.sh" ] \
     || fail "uncommitted-wake-retry: failed commit disarmed the retry poll"
+  [ ! -e "$case_dir/state/.wake-queue" ] \
+    || fail "uncommitted-wake-retry: failed marker commit published an outcome"
+  [ ! -e "$case_dir/state/task-x1.pr-poll-merge-notified" ] \
+    || fail "uncommitted-wake-retry: failed marker commit was treated as complete"
 
   FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
     >"$case_dir/stdout-2" 2>"$case_dir/stderr-2" \
