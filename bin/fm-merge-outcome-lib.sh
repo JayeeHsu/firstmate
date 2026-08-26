@@ -16,10 +16,10 @@
 # No new state file and no new transport: the parent channel and the wake queue
 # are the two records the captain already reads.
 #
-# At most once per task and canonical PR identity. The upward line is appended
-# only when an identical line is absent, and a self-performed merge records the
-# canonical merge-notification marker owned by bin/fm-pr-lib.sh, so a later poll
-# detection of that same merge is absorbed instead of reported a second time.
+# Normal operation deduplicates each task and canonical PR identity through the
+# merge-notification marker owned by bin/fm-pr-lib.sh. The outcome is published
+# before that marker is committed, so a failed commit stays eligible for
+# at-least-once retry and may rarely duplicate rather than leave a merge silent.
 #
 # Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
 # source beyond its sourced libraries.
