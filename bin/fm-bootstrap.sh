@@ -52,8 +52,8 @@
 #          "treehouse get --lease" support.
 #          no-mistakes is also MISSING when its installed version is older than
 #          1.46.0 (structured pipeline attestation floor; see CONTRIBUTING.md).
-#          The AXI-family floor policy is owned beside GH_AXI_MIN and
-#          LAVISH_AXI_MIN below; the per-tool owners point there. An installed
+#          The maintained AXI-family floor policy is owned beside
+#          LAVISH_AXI_MIN below; its per-tool owner points there. An installed
 #          build below its floor reports MISSING like no-mistakes, so the operator
 #          is asked to upgrade rather than silently running an older tool.
 #          tasks-axi feature probes remain a separate defense-in-depth check.
