@@ -7,11 +7,12 @@
 #
 # Matrix:
 #   (a) a verified merge records pr= and pr_head=
-#   (b) merge is refused when gh-merge-fixture pr merge itself fails (no silent success)
-#   (c) extra gh-merge-fixture pr merge args are forwarded after number and --repo
-#   (d) merge is refused before gh-merge-fixture when task meta is missing
-#   (e) PR URL is parsed to number + --repo for gh-merge-fixture (defaults to --squash)
-#   (f) malformed PR URL fails fast without calling gh-merge-fixture
+#   (b) merge is refused when native gh pr merge itself fails (no silent success)
+#   (c) extra native gh pr merge args are forwarded after number and --repo
+#   (d) merge is refused before native gh when task meta is missing
+#   (e) PR URL is parsed to number + host-qualified --repo for native gh
+#       (defaults to --squash)
+#   (f) malformed PR URL fails fast without calling native gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL,
 #       including a bundled short-option cluster that carries -R
@@ -34,8 +35,8 @@
 #       recorded and the merge poll armed
 #   (y) agreeing queue rules still produce exact retry flags
 #   (z) conflicting queue rules report ambiguous retry guidance
-#   (aa) gh-merge-fixture remains usable when gh is absent
-#   (ab) a landed merge whose fallback outcome read fails keeps its poll armed
+#   (aa) GitHub merge refuses before recording when native gh is absent
+#   (ab) a successful native merge command whose outcome read fails keeps its poll armed
 #   (ac) a successful merge in a secondmate home reports the landed PR upward
 #       once, on the route its parent binding names, and a repeat merge of the
 #       same PR does not duplicate that line
@@ -48,7 +49,6 @@
 #   (ai) an uncommitted marker retry never loses the durable outcome
 #   (aj) distinct merged PRs for a reused task each survive queue deduplication
 #   (ak) pr= is already recorded when the forge call that can land the merge runs
-#   (al) a failed gh read falls back to the gh-merge-fixture view, which can prove a merge
 #   (am) a failed merge command still names an outcome read that proves a landed
 #       or queued pull request, without masking the forge failure
 #   (an) a refusal after a zero-exit merge quotes the forge's own output, marked
@@ -66,8 +66,6 @@
 #       guesses no method
 #   (au) unreadable branch rules are reported apart from a queue-less base
 #   (av) a base branch with no queue rule says nothing about a merge queue
-#   (aw) a refusal built on the gh-merge-fixture view says the merge queue could not be
-#       observed, and judges that view's state like the queue-aware one
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -210,22 +208,6 @@ esac
 exit 0
 SH
   chmod +x "$case_dir/fakebin/gh"
-}
-
-# gh-merge-fixture mock that merges but cannot answer its own view, so a case can prove
-# what happens when neither reader can establish the outcome. Args: case_dir
-add_gh_axi_mock_view_fails() {
-  local case_dir=$1
-  cat > "$case_dir/fakebin/gh-merge-fixture" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$FM_TEST_GH_MERGE_FIXTURE_LOG"
-case "${1:-} ${2:-}" in
-  "pr merge") printf 'merged:\n  number: %s\n  status: ok\n' "${3:-}" ;;
-  "pr view") exit 1 ;;
-esac
-exit 0
-SH
-  chmod +x "$case_dir/fakebin/gh-merge-fixture"
 }
 
 add_failing_poll_publish_mv() {
@@ -394,7 +376,8 @@ test_verified_merge_records_pr_and_head() {
   : > "$case_dir/gh-merge-fixture.log"
 
   set +e
-  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+  GH_HOST=github.enterprise.invalid run_pr_merge "$case_dir" task-x1 \
+    https://github.com/example/repo/pull/9 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
@@ -404,8 +387,10 @@ test_verified_merge_records_pr_and_head() {
     "records-before-merge: pr= was not recorded"
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
     "records-before-merge: pr_head= was not recorded"
-  grep -qxF 'pr merge 9 --repo example/repo --squash' "$case_dir/gh-merge-fixture.log" \
-    || fail "records-before-merge: gh-merge-fixture pr merge was not invoked with number, --repo, and default --squash"
+  grep -qxF 'pr merge 9 --repo github.com/example/repo --squash' "$case_dir/gh-merge-fixture.log" \
+    || fail "records-before-merge: native gh merge was not bound to the URL's host and repository"
+  assert_grep 'api graphql --hostname github.com ' "$case_dir/gh.log" \
+    "records-before-merge: outcome verification was not bound to the URL's host"
   pass "fm-pr-merge records pr= and pr_head= for a verified GitHub merge"
 }
 
@@ -442,7 +427,7 @@ SH
   set -e
 
   expect_code 0 "$rc" "records-ahead-of-forge-call: fm-pr-merge should succeed"
-  assert_grep 'pr merge 62 --repo example/repo --squash' "$case_dir/gh-merge-fixture.log" \
+  assert_grep 'pr merge 62 --repo github.com/example/repo --squash' "$case_dir/gh-merge-fixture.log" \
     "records-ahead-of-forge-call: the merge abstraction was never invoked"
   assert_grep 'pr=https://github.com/example/repo/pull/62' "$case_dir/meta-at-merge" \
     "records-ahead-of-forge-call: the merge ran before pr= was recorded"
@@ -569,7 +554,6 @@ test_github_unreadable_outcome_keeps_pr_bookkeeping() {
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 3131313131313131313131313131313131313131
   add_gh_mock_outcome_read_fails "$case_dir" 3131313131313131313131313131313131313131
-  add_gh_axi_mock_view_fails "$case_dir"
   : > "$case_dir/gh-merge-fixture.log"
   : > "$case_dir/gh.log"
 
@@ -663,7 +647,7 @@ test_github_auto_merge_without_queue_refuses_legibly() {
       "$case_dir/stderr" "github-auto-no-queue: the refusal never explained the armed auto-merge"
     assert_grep 'nothing is merged or in the merge queue yet' "$case_dir/stderr" \
       "github-auto-no-queue: the refusal left the operator to infer the pending state"
-    grep -qxF "pr merge 66 --repo example/repo $spelling --merge" "$case_dir/gh-merge-fixture.log" \
+    grep -qxF "pr merge 66 --repo github.com/example/repo $spelling --merge" "$case_dir/gh-merge-fixture.log" \
       || fail "github-auto-no-queue: the attempted merge was changed unexpectedly"
     [ "$(wc -l < "$case_dir/gh-merge-fixture.log" | tr -d '[:space:]')" = 1 ] \
       || fail "github-auto-no-queue: the wrapper attempted more than one merge"
@@ -968,7 +952,8 @@ test_github_zero_exit_queue_required_refuses_with_exact_retry() {
   : > "$case_dir/gh.log"
 
   set +e
-  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/56 \
+  GH_HOST=github.enterprise.invalid run_pr_merge "$case_dir" task-x1 \
+    https://github.com/example/repo/pull/56 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
@@ -980,9 +965,9 @@ test_github_zero_exit_queue_required_refuses_with_exact_retry() {
     "github-zero-exit-queue-required: refusal did not name the queue requirement"
   assert_grep '-- --auto --rebase' "$case_dir/stderr" \
     "github-zero-exit-queue-required: refusal did not name the exact compatible flags"
-  assert_grep 'api --paginate repos/example/repo/rules/branches/release%2F2026' "$case_dir/gh.log" \
+  assert_grep 'api --hostname github.com --paginate repos/example/repo/rules/branches/release%2F2026' "$case_dir/gh.log" \
     "github-zero-exit-queue-required: queue rules were not read with pagination and encoded branch path"
-  grep -qxF 'pr merge 56 --repo example/repo --squash' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 56 --repo github.com/example/repo --squash' "$case_dir/gh-merge-fixture.log" \
     || fail "github-zero-exit-queue-required: the attempted merge was changed unexpectedly"
   [ "$(wc -l < "$case_dir/gh-merge-fixture.log" | tr -d '[:space:]')" = 1 ] \
     || fail "github-zero-exit-queue-required: the wrapper attempted more than one merge"
@@ -1073,7 +1058,7 @@ test_github_queue_required_refusal_names_retry_flags() {
     "github-queue-required: refusal did not name the queue requirement"
   grep -F -- '-- --auto --merge' "$case_dir/stderr" >/dev/null \
     || fail "github-queue-required: refusal did not name the exact compatible flags"
-  grep -qxF 'pr merge 54 --repo example/repo --squash' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 54 --repo github.com/example/repo --squash' "$case_dir/gh-merge-fixture.log" \
     || fail "github-queue-required: the wrapper silently changed the attempted merge semantics"
   assert_present "$case_dir/state/task-x1.check.sh" \
     "github-queue-required: the failed forge call did not leave the merge poll armed"
@@ -1146,7 +1131,7 @@ test_extra_merge_args_forwarded() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/15 -- --squash --delete-branch \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "extra-args: fm-pr-merge failed"
 
-  grep -qxF 'pr merge 15 --repo example/repo --squash --delete-branch' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 15 --repo github.com/example/repo --squash --delete-branch' "$case_dir/gh-merge-fixture.log" \
     || fail "extra-args: extra gh-merge-fixture pr merge flags were not forwarded"
   pass "fm-pr-merge forwards extra flags to gh-merge-fixture pr merge after the -- separator"
 }
@@ -1310,7 +1295,7 @@ test_bundled_repo_override_args_refuse_before_recording() {
     > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "bundled-non-repo-cluster: fm-pr-merge refused a short flag that overrides nothing"
 
-  grep -qxF 'pr merge 8 --repo example/repo --squash -d' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 8 --repo github.com/example/repo --squash -d' "$case_dir/gh-merge-fixture.log" \
     || fail "bundled-non-repo-cluster: a short flag carrying no repository override was not forwarded"
   pass "fm-pr-merge refuses a bundled short-option repo override and forwards other short flags"
 }
@@ -1325,7 +1310,7 @@ test_explicit_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/22 -- --merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "explicit-merge-method: fm-pr-merge failed"
 
-  grep -qxF 'pr merge 22 --repo example/repo --merge' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 22 --repo github.com/example/repo --merge' "$case_dir/gh-merge-fixture.log" \
     || fail "explicit-merge-method: caller --merge was not forwarded without an extra default --squash"
   pass "fm-pr-merge does not add default --squash when the caller passes an explicit merge method"
 }
@@ -1340,12 +1325,12 @@ test_method_equals_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/23 -- --method=merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "method-equals-merge-method: fm-pr-merge failed"
 
-  grep -qxF 'pr merge 23 --repo example/repo --merge' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 23 --repo github.com/example/repo --merge' "$case_dir/gh-merge-fixture.log" \
     || fail "method-equals-merge-method: caller --method=merge was not forwarded without an extra default --squash"
   pass "fm-pr-merge translates --method=<value> to native gh's explicit merge flag"
 }
 
-test_parses_pr_url_for_gh_axi() {
+test_parses_pr_url_for_native_gh() {
   local case_dir
   case_dir=$(make_case url-parsing)
   mkdir -p "$case_dir/wt"
@@ -1355,9 +1340,9 @@ test_parses_pr_url_for_gh_axi() {
   run_pr_merge "$case_dir" task-x1 https://github.com/my-org/my-repo/pull/126 \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "url-parsing: fm-pr-merge failed"
 
-  grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/gh-merge-fixture.log" \
-    || fail "url-parsing: gh-merge-fixture pr merge was not invoked as number + --repo + default --squash"
-  pass "fm-pr-merge parses a GitHub PR URL into gh-merge-fixture number and --repo arguments"
+  grep -qxF 'pr merge 126 --repo github.com/my-org/my-repo --squash' "$case_dir/gh-merge-fixture.log" \
+    || fail "url-parsing: native gh merge was not invoked with the canonical host and repository"
+  pass "fm-pr-merge parses a GitHub PR URL into native gh targeting arguments"
 }
 
 test_gitlab_url_resolves_and_merges() {
@@ -1670,7 +1655,7 @@ test_github_still_forwards_sha_arg() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/44 -- --sha abc123 \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "github-sha-arg: fm-pr-merge failed"
 
-  grep -qxF 'pr merge 44 --repo example/repo --squash --match-head-commit abc123' "$case_dir/gh-merge-fixture.log" \
+  grep -qxF 'pr merge 44 --repo github.com/example/repo --squash --match-head-commit abc123' "$case_dir/gh-merge-fixture.log" \
     || fail "github-sha-arg: the GitHub path stopped forwarding a caller --sha"
   pass "fm-pr-merge translates the accepted GitHub head guard to native gh's flag"
 }
@@ -1997,7 +1982,7 @@ test_repo_override_args_refuse_before_recording
 test_bundled_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
-test_parses_pr_url_for_gh_axi
+test_parses_pr_url_for_native_gh
 test_github_still_forwards_sha_arg
 test_gitlab_url_resolves_and_merges
 test_gitlab_host_comes_from_the_url

@@ -2,7 +2,7 @@
 # Merge a task's PR or MR after recording pr= and any available pr_head= through
 # bin/fm-pr-check.sh, so teardown can verify landed work after squash merges.
 # The full canonical URL is parsed by bin/fm-pr-lib.sh. A GitHub pull request is
-# addressed through native gh by the derived owner and repository; a GitLab
+# addressed through native gh by the derived host, owner, and repository; a GitLab
 # merge request is addressed through glab by the project URL rebuilt from the
 # parsed host and path, so any instance works and no host is hardcoded.
 #
@@ -363,7 +363,7 @@ github_read_outcome_with_gh() {
   local state='' merged='' queued='' base=''
 
   # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
-  if ! fields=$(gh api graphql \
+  if ! fields=$(gh api graphql --hostname "$FM_PR_HOST" \
     -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}}' \
     -F "owner=$PR_OWNER" -F "repo=$PR_REPO" -F "number=$PR_NUMBER" \
     --jq '.data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")' \
@@ -438,7 +438,7 @@ github_read_queue_method() {
   command -v gh >/dev/null 2>&1 || return 0
   [ -n "$FM_PR_GITHUB_BASE" ] || return 0
   branch_path=$(github_urlencode_path_segment "$FM_PR_GITHUB_BASE")
-  if ! methods=$(gh api \
+  if ! methods=$(gh api --hostname "$FM_PR_HOST" \
     --paginate "repos/$PR_OWNER/$PR_REPO/rules/branches/$branch_path" \
     --jq '.[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")' \
     2>/dev/null); then
@@ -640,7 +640,7 @@ case "$PROVIDER" in
       FM_PR_GITHUB_AUTO_REQUESTED=true
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
-    if merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
+    if merge_output=$(gh pr merge "$PR_NUMBER" --repo "$FM_PR_HOST/$PR_OWNER/$PR_REPO" \
       "${merge_args[@]+"${merge_args[@]}"}" \
       "${FM_PR_GITHUB_NATIVE_ARGS[@]+"${FM_PR_GITHUB_NATIVE_ARGS[@]}"}" 2>&1); then
       FM_PR_GITHUB_MERGE_ACCEPTED=true
