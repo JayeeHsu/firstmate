@@ -571,7 +571,7 @@ test_valid_recording_and_merge_derivation() {
   : > "$dir/gh-merge.log"
   run_merge_entry "$dir" task-a https://github.com/my-org/repo_name.with-dots/pull/37 -- --merge \
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
-  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/gh-merge.log" \
+  grep -qxF 'pr merge 37 --repo github.com/my-org/repo_name.with-dots --merge' "$dir/gh-merge.log" \
     || fail "merge wrapper did not preserve repository derivation and method"
   # A merge this home performed leaves its own durable outcome, so the poll's
   # confirmation is no longer the first the captain hears of it. Acknowledge that
