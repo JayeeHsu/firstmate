@@ -1366,6 +1366,13 @@ ${context.command}
     active: false,
     stockExportRendering: false,
   };
+  pi.events?.on?.(FIRSTMATE_CALM_PRESENTATION_EVENT, (data) => {
+    const next = data as Partial<CalmPresentationState>;
+    calmPresentation = {
+      active: next.active === true,
+      stockExportRendering: next.stockExportRendering === true,
+    };
+  });
   const calmHides = (itemClass: Parameters<typeof calmTranscriptClassIsVisible>[0]): boolean =>
     calmPresentation.active &&
     !calmPresentation.stockExportRendering &&
@@ -1415,24 +1422,7 @@ ${context.command}
     return shell;
   };
 
-  const outcomesRenderCall: NonNullable<ToolDefinition["renderCall"]> = (_args, theme, context) => {
-    if (calmHides("assistant-tool-call")) return new Container();
-    const shellState = context.state as OutcomesToolShellState;
-    shellState.call = new Text(theme.fg("toolTitle", theme.bold("fm_branch_outcomes")), 0, 0);
-    return refreshOutcomesToolShell(shellState, theme, context);
-  };
-  const outcomesRenderResult: NonNullable<ToolDefinition["renderResult"]> = (result, _options, theme, context) => {
-    if (calmHides("tool-result")) return new Container();
-    const output = result.content
-      .filter((item) => item.type === "text")
-      .map((item) => normalizeOutcomesToolOutput(item.text))
-      .join("\n");
-    const shellState = context.state as OutcomesToolShellState;
-    shellState.result = output ? new Text(theme.fg("toolOutput", output), 0, 0) : new Container();
-    refreshOutcomesToolShell(shellState, theme, context);
-    return new Container();
-  };
-  const outcomesToolDefinition: ToolDefinition = {
+  pi.registerTool?.({
     name: "fm_branch_outcomes",
     label: "Read supervision branch outcomes",
     description:
@@ -1441,6 +1431,26 @@ ${context.command}
     parameters: Type.Object({
       recent: Type.Optional(Type.Number({ description: "How many most-recent outcomes to read (default 20)" })),
     }),
+    renderShell: "self",
+    renderCall: (_args, theme, context) => {
+      if (calmPresentation.stockExportRendering) throw new Error("Use Pi stock export rendering");
+      if (calmHides("assistant-tool-call")) return new Container();
+      const shellState = context.state as OutcomesToolShellState;
+      shellState.call = new Text(theme.fg("toolTitle", theme.bold("fm_branch_outcomes")), 0, 0);
+      return refreshOutcomesToolShell(shellState, theme, context);
+    },
+    renderResult: (result, _options, theme, context) => {
+      if (calmPresentation.stockExportRendering) throw new Error("Use Pi stock export rendering");
+      if (calmHides("tool-result")) return new Container();
+      const output = result.content
+        .filter((item) => item.type === "text")
+        .map((item) => normalizeOutcomesToolOutput(item.text))
+        .join("\n");
+      const shellState = context.state as OutcomesToolShellState;
+      shellState.result = output ? new Text(theme.fg("toolOutput", output), 0, 0) : new Container();
+      refreshOutcomesToolShell(shellState, theme, context);
+      return new Container();
+    },
     execute: async (_toolCallId, params) => {
       const recentRaw = (params as { recent?: unknown }).recent;
       const recent = typeof recentRaw === "number" && recentRaw >= 1 ? String(Math.floor(recentRaw)) : "20";
@@ -1457,26 +1467,6 @@ ${context.command}
         details: undefined,
       };
     },
-  };
-  const syncOutcomesToolRendering = (): void => {
-    if (calmPresentation.active && !calmPresentation.stockExportRendering) {
-      outcomesToolDefinition.renderShell = "self";
-      outcomesToolDefinition.renderCall = outcomesRenderCall;
-      outcomesToolDefinition.renderResult = outcomesRenderResult;
-      return;
-    }
-    delete outcomesToolDefinition.renderShell;
-    delete outcomesToolDefinition.renderCall;
-    delete outcomesToolDefinition.renderResult;
-  };
-  pi.registerTool?.(outcomesToolDefinition);
-  pi.events?.on?.(FIRSTMATE_CALM_PRESENTATION_EVENT, (data) => {
-    const next = data as Partial<CalmPresentationState>;
-    calmPresentation = {
-      active: next.active === true,
-      stockExportRendering: next.stockExportRendering === true,
-    };
-    syncOutcomesToolRendering();
   });
 
   // Pi only calls this renderer for a message with display: true, which
