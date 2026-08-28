@@ -541,13 +541,15 @@ test_branch_dispatch_two_stage_filter_and_prefix_contract() {
   local repo home out status
   repo="$TMP_ROOT/dispatch-root"
   home="$TMP_ROOT/dispatch-home"
-  mkdir -p "$home/state" "$home/config"
+  mkdir -p "$home/state" "$home/config" "$home/data"
+  printf 'Captain prefers concise Chinese: 中文。\n' > "$home/data/captain.md"
   install_pi_branch_extension_fixture "$repo"
-  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE= \
     DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 const prelude = process.env.DRIVER_PRELUDE;
 await eval(`(async () => { ${prelude}; globalThis.__t = { pi, fire, dispatch, settle, outcomeScript, sentToMain, mainUserMessages, mainTools, renderers, home, realRoot }; })()`);
 const { pi, fire, dispatch, settle, outcomeScript, sentToMain, mainUserMessages, mainTools, renderers, home, realRoot } = globalThis.__t;
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 writeFileSync(`${home}/state/.lock`, `${process.ppid}\n`);
@@ -577,10 +579,28 @@ if (!loader.options.systemPrompt || !loader.options.systemPrompt.startsWith("You
   throw new Error("branch system prompt is not the generator's output");
 }
 if (loader.options.systemPrompt.length < 4096) throw new Error("branch prompt is below the provider caching minimum");
+if (!loader.options.systemPrompt.includes("${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md")) {
+  throw new Error("branch prompt does not resolve the durable captain preference from the active data directory");
+}
+if (loader.options.systemPrompt.includes("Captain prefers concise Chinese")) {
+  throw new Error("branch prompt copied home-private captain content into the provider prefix");
+}
 const bashTool = session.options.customTools.find((tool) => tool.name === "bash");
-const hooked = bashTool.__options.spawnHook({ command: "true", cwd: "/x", env: { PATH: "/bin" } });
+const hooked = bashTool.__options.spawnHook({
+  command: 'cat "${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md"',
+  cwd: realRoot,
+  env: { PATH: process.env.PATH },
+});
 if (hooked.env.FM_SUPERVISION_ACTOR !== "branch") throw new Error("branch bash does not inject the branch actor");
 if (hooked.env.FM_LEASE_HOLDER_PID !== String(process.ppid)) throw new Error("branch bash does not pin the verified session-lock holder pid");
+const durablePreference = spawnSync("bash", ["-c", hooked.command], {
+  cwd: hooked.cwd,
+  env: hooked.env,
+  encoding: "utf8",
+});
+if (durablePreference.status !== 0 || durablePreference.stdout.trim() !== "Captain prefers concise Chinese: 中文。") {
+  throw new Error(`mirrorless split-home fallback missed FM_HOME/data/captain.md: ${durablePreference.stderr}`);
+}
 
 // 3. Shared per-home prompt_cache_key: overrides only payloads that already
 // carry one, stable within the home.
@@ -1284,6 +1304,7 @@ const entries = [
   { type: "custom", message: { role: "custom", customType: "fm-branch-merge", content: "merged note" } },
   { type: "compaction", summary: "compacted" },
   { type: "message", message: { role: "user", content: `pad ${"x".repeat(5000)}` } },
+  { type: "message", message: { role: "user", content: "最近请用中文简洁汇报。" } },
 ];
 const ctx = {
   sessionManager: {
@@ -1300,7 +1321,7 @@ dispatch("signal: after mirror");
 await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "branch wake prompt");
 const session = globalThis.__fmSessions[0];
 const kinds = session.ops.map((op) => op.kind);
-if (JSON.stringify(kinds) !== JSON.stringify(["custom", "custom", "custom", "prompt"])) {
+if (JSON.stringify(kinds) !== JSON.stringify(["custom", "custom", "custom", "custom", "prompt"])) {
   throw new Error(`mirror must land before the wake: ${JSON.stringify(kinds)}`);
 }
 const mirrored = session.ops.filter((op) => op.kind === "custom").map((op) => op.message);
@@ -1309,14 +1330,24 @@ if (mirrored.some((m) => m.display !== false)) throw new Error("mirrored context
 if (mirrored[0].content !== "[captain] never merge task-7 without my word") throw new Error(`bad captain mirror: ${mirrored[0].content}`);
 if (mirrored[1].content !== "[main] aye, holding task-7") throw new Error(`bad main mirror: ${mirrored[1].content}`);
 if (!mirrored[2].content.includes("[mirror truncated at 4000 characters]")) throw new Error("long dialog was not capped");
+if (mirrored[3].content !== "[captain] 最近请用中文简洁汇报。") {
+  throw new Error(`latest Chinese captain context was not mirrored: ${mirrored[3].content}`);
+}
 if (mirrored.some((m) => m.content.includes("operational injection") || m.content.includes("tool output") || m.content.includes("merged note"))) {
   throw new Error("mirror leaked operational, tool, or merge-note traffic");
 }
+const languageContract = globalThis.__fmLoaders[0].options.systemPrompt;
+if (!languageContract.includes("language of the most recent usable [captain] mirror message") ||
+    !languageContract.includes("${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md")) {
+  throw new Error("branch prompt does not instruct a Chinese-context routine summary to follow the captain's language with the durable fallback");
+}
 
-// The durable cursor advances: a second turn_end mirrors only NEW dialog.
+// The durable cursor advances: a second turn_end mirrors only NEW English
+// dialog, preserving generic language-following behavior rather than pinning
+// this repository globally to Chinese.
 entries.push({ type: "message", message: { role: "user", content: "actually, task-7 may merge when green" } });
 fire("turn_end", {}, ctx);
-await settle(() => session.ops.filter((op) => op.kind === "custom").length === 4, "incremental mirror");
+await settle(() => session.ops.filter((op) => op.kind === "custom").length === 5, "incremental mirror");
 const latest = session.ops[session.ops.length - 1];
 if (latest.message.content !== "[captain] actually, task-7 may merge when green") {
   throw new Error(`incremental mirror re-sent old dialog or lost the new line: ${latest.message.content}`);
@@ -1335,7 +1366,7 @@ const ctx2 = {
   },
 };
 fire("turn_end", {}, ctx2);
-await settle(() => session.ops.filter((op) => op.kind === "custom").length === 5, "replacement-session mirror");
+await settle(() => session.ops.filter((op) => op.kind === "custom").length === 6, "replacement-session mirror");
 const fresh = session.ops[session.ops.length - 1];
 if (fresh.message.content !== "[captain] fresh session standing order") {
   throw new Error(`replacement session did not re-anchor the mirror: ${fresh.message.content}`);

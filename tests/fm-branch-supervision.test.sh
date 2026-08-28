@@ -19,11 +19,15 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
   local home_a home_b out_a out_b out_c size
   home_a="$TMP_ROOT/prompt-home-a"
   home_b="$TMP_ROOT/prompt-home-b"
-  mkdir -p "$home_a/state" "$home_b/state"
-  # Give the two homes deliberately different fleet state and clock context:
-  # a byte-stable prompt must not absorb any of it.
+  mkdir -p "$home_a/state" "$home_a/data" "$home_b/state" "$home_b/data"
+  # Give the two homes deliberately different fleet state, private language
+  # preferences, and clock context: a byte-stable prompt must not absorb any
+  # of it. The branch reads a durable preference at wake time only when no
+  # usable captain mirror exists.
   printf 'signal: task-1 done\n' > "$home_a/state/task-1.status"
   printf 'window=x\nharness=pi\n' > "$home_a/state/task-1.meta"
+  printf 'PRIVATE_HOME_A prefers concise Chinese.\n' > "$home_a/data/captain.md"
+  printf 'PRIVATE_HOME_B prefers concise English.\n' > "$home_b/data/captain.md"
 
   out_a=$(cd "$TMP_ROOT" && FM_HOME="$home_a" TZ=UTC "$ROOT/bin/fm-branch-prompt.sh") \
     || fail "branch prompt generator failed for home A"
@@ -48,7 +52,13 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *"stuck-crewmate-recovery"*) ;;
     *) fail "branch prompt lost the inlined recovery playbook" ;;
   esac
-  pass "branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor"
+  case "$out_a" in
+    *"language of the most recent usable [captain] mirror message"*'`${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md`'*"at wake time"*) ;;
+    *) fail "branch prompt lost the active-home captain-language resolution contract" ;;
+  esac
+  assert_not_contains "$out_a" "PRIVATE_HOME_A" "branch prompt copied home A's private preference into the provider prefix"
+  assert_not_contains "$out_b" "PRIVATE_HOME_B" "branch prompt copied home B's private preference into the provider prefix"
+  pass "branch prompt is byte-stable and resolves summary language without absorbing home-private preferences"
 }
 
 # --- append-only outcome store ------------------------------------------------
