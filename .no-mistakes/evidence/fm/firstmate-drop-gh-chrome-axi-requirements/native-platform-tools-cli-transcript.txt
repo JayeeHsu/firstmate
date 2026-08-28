@@ -1,0 +1,24 @@
+=== 1. Startup dependency detection with removed tools absent ===
+PATH intentionally contains native gh and maintained tools, but no gh-axi or chrome-devtools-axi.
+Bootstrap diagnostics: <none>
+
+=== 2. Generated direct-PR brief shown to a crewmate ===
+3. Use the native `gh` CLI for GitHub operations, `glab` or the existing GitLab integration for GitLab operations, and Ego Lite / `ego-browser` for browser automation and UI acceptance.
+When it is implemented and committed, push your branch and open a PR with `gh`, then append `done: PR {url}` to the status file and stop.
+
+=== 3. Native GitHub merge with hostile ambient GH_HOST ===
+armed: state/task-42.check.sh
+verified: https://github.com/acme/widgets/pull/42 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+Native gh calls observed:
+GH_HOST=hostile.enterprise.example gh pr merge 42 --repo github.com/acme/widgets --squash
+GH_HOST=hostile.enterprise.example gh api graphql --hostname github.com -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=acme -F repo=widgets -F number=42 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+Persisted task metadata:
+pr=https://github.com/acme/widgets/pull/42
+Durable merge notification:
+1787931010	1	check	merged-task-42-https://github.com/acme/widgets/pull/42	check: merge landed: task-42 https://github.com/acme/widgets/pull/42
+
+=== 4. Missing native gh refuses before recording or polling ===
+exit=1
+error: merging a GitHub pull request requires gh on PATH
+PR metadata: not recorded
+Merge poll: not armed
