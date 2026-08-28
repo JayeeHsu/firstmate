@@ -1,0 +1,34 @@
+{
+  "commit": "7b3c52980477caf90b354b3015d75a877dc9f265",
+  "model": "openai-codex/gpt-5.6-sol",
+  "scenarios": [
+    {
+      "name": "latest Chinese captain mirror",
+      "captainMirror": "[captain] 最近请用中文简洁汇报。",
+      "durablePreferenceRead": false,
+      "verdict": "routine",
+      "renderedMainNote": "⛵ task-lang: task-lang 已完成专项检查，结果通过，无需处理。"
+    },
+    {
+      "name": "latest English captain mirror",
+      "captainMirror": "[captain] Please keep routine supervision summaries concise and in English.",
+      "durablePreferenceRead": false,
+      "verdict": "routine",
+      "renderedMainNote": "⛵ task-lang: Focused checks passed; no action is required."
+    },
+    {
+      "name": "latest Spanish captain mirror",
+      "captainMirror": "[captain] Por favor, mantén los resúmenes rutinarios breves y en español.",
+      "durablePreferenceRead": false,
+      "verdict": "routine",
+      "renderedMainNote": "⛵ task-lang: La tarea terminó correctamente y superó las comprobaciones específicas; no requiere ninguna acción."
+    },
+    {
+      "name": "mirrorless split-home durable Chinese preference",
+      "captainMirror": "(none)",
+      "durablePreferenceRead": true,
+      "verdict": "routine",
+      "renderedMainNote": "⛵ task-lang: task-lang 已正常完成专项检查，检查通过且无阻塞。"
+    }
+  ]
+}
