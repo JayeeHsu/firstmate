@@ -541,13 +541,15 @@ test_branch_dispatch_two_stage_filter_and_prefix_contract() {
   local repo home out status
   repo="$TMP_ROOT/dispatch-root"
   home="$TMP_ROOT/dispatch-home"
-  mkdir -p "$home/state" "$home/config"
+  mkdir -p "$home/state" "$home/config" "$home/data"
+  printf 'Captain prefers concise Chinese: 中文。\n' > "$home/data/captain.md"
   install_pi_branch_extension_fixture "$repo"
-  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE= \
     DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 const prelude = process.env.DRIVER_PRELUDE;
 await eval(`(async () => { ${prelude}; globalThis.__t = { pi, fire, dispatch, settle, outcomeScript, sentToMain, mainUserMessages, mainTools, renderers, home, realRoot }; })()`);
 const { pi, fire, dispatch, settle, outcomeScript, sentToMain, mainUserMessages, mainTools, renderers, home, realRoot } = globalThis.__t;
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 writeFileSync(`${home}/state/.lock`, `${process.ppid}\n`);
@@ -577,10 +579,28 @@ if (!loader.options.systemPrompt || !loader.options.systemPrompt.startsWith("You
   throw new Error("branch system prompt is not the generator's output");
 }
 if (loader.options.systemPrompt.length < 4096) throw new Error("branch prompt is below the provider caching minimum");
+if (!loader.options.systemPrompt.includes("${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md")) {
+  throw new Error("branch prompt does not resolve the durable captain preference from the active data directory");
+}
+if (loader.options.systemPrompt.includes("Captain prefers concise Chinese")) {
+  throw new Error("branch prompt copied home-private captain content into the provider prefix");
+}
 const bashTool = session.options.customTools.find((tool) => tool.name === "bash");
-const hooked = bashTool.__options.spawnHook({ command: "true", cwd: "/x", env: { PATH: "/bin" } });
+const hooked = bashTool.__options.spawnHook({
+  command: 'cat "${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md"',
+  cwd: realRoot,
+  env: { PATH: process.env.PATH },
+});
 if (hooked.env.FM_SUPERVISION_ACTOR !== "branch") throw new Error("branch bash does not inject the branch actor");
 if (hooked.env.FM_LEASE_HOLDER_PID !== String(process.ppid)) throw new Error("branch bash does not pin the verified session-lock holder pid");
+const durablePreference = spawnSync("bash", ["-c", hooked.command], {
+  cwd: hooked.cwd,
+  env: hooked.env,
+  encoding: "utf8",
+});
+if (durablePreference.status !== 0 || durablePreference.stdout.trim() !== "Captain prefers concise Chinese: 中文。") {
+  throw new Error(`mirrorless split-home fallback missed FM_HOME/data/captain.md: ${durablePreference.stderr}`);
+}
 
 // 3. Shared per-home prompt_cache_key: overrides only payloads that already
 // carry one, stable within the home.
@@ -1318,7 +1338,7 @@ if (mirrored.some((m) => m.content.includes("operational injection") || m.conten
 }
 const languageContract = globalThis.__fmLoaders[0].options.systemPrompt;
 if (!languageContract.includes("language of the most recent usable [captain] mirror message") ||
-    !languageContract.includes("read data/captain.md")) {
+    !languageContract.includes("${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md")) {
   throw new Error("branch prompt does not instruct a Chinese-context routine summary to follow the captain's language with the durable fallback");
 }
 

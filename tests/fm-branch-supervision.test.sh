@@ -53,8 +53,8 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *) fail "branch prompt lost the inlined recovery playbook" ;;
   esac
   case "$out_a" in
-    *"language of the most recent usable [captain] mirror message"*"read data/captain.md"*) ;;
-    *) fail "branch prompt lost the captain-language resolution contract" ;;
+    *"language of the most recent usable [captain] mirror message"*'`${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md`'*"at wake time"*) ;;
+    *) fail "branch prompt lost the active-home captain-language resolution contract" ;;
   esac
   assert_not_contains "$out_a" "PRIVATE_HOME_A" "branch prompt copied home A's private preference into the provider prefix"
   assert_not_contains "$out_b" "PRIVATE_HOME_B" "branch prompt copied home B's private preference into the provider prefix"
