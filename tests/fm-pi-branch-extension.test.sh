@@ -1284,6 +1284,7 @@ const entries = [
   { type: "custom", message: { role: "custom", customType: "fm-branch-merge", content: "merged note" } },
   { type: "compaction", summary: "compacted" },
   { type: "message", message: { role: "user", content: `pad ${"x".repeat(5000)}` } },
+  { type: "message", message: { role: "user", content: "最近请用中文简洁汇报。" } },
 ];
 const ctx = {
   sessionManager: {
@@ -1300,7 +1301,7 @@ dispatch("signal: after mirror");
 await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "branch wake prompt");
 const session = globalThis.__fmSessions[0];
 const kinds = session.ops.map((op) => op.kind);
-if (JSON.stringify(kinds) !== JSON.stringify(["custom", "custom", "custom", "prompt"])) {
+if (JSON.stringify(kinds) !== JSON.stringify(["custom", "custom", "custom", "custom", "prompt"])) {
   throw new Error(`mirror must land before the wake: ${JSON.stringify(kinds)}`);
 }
 const mirrored = session.ops.filter((op) => op.kind === "custom").map((op) => op.message);
@@ -1309,14 +1310,24 @@ if (mirrored.some((m) => m.display !== false)) throw new Error("mirrored context
 if (mirrored[0].content !== "[captain] never merge task-7 without my word") throw new Error(`bad captain mirror: ${mirrored[0].content}`);
 if (mirrored[1].content !== "[main] aye, holding task-7") throw new Error(`bad main mirror: ${mirrored[1].content}`);
 if (!mirrored[2].content.includes("[mirror truncated at 4000 characters]")) throw new Error("long dialog was not capped");
+if (mirrored[3].content !== "[captain] 最近请用中文简洁汇报。") {
+  throw new Error(`latest Chinese captain context was not mirrored: ${mirrored[3].content}`);
+}
 if (mirrored.some((m) => m.content.includes("operational injection") || m.content.includes("tool output") || m.content.includes("merged note"))) {
   throw new Error("mirror leaked operational, tool, or merge-note traffic");
 }
+const languageContract = globalThis.__fmLoaders[0].options.systemPrompt;
+if (!languageContract.includes("language of the most recent usable [captain] mirror message") ||
+    !languageContract.includes("read data/captain.md")) {
+  throw new Error("branch prompt does not instruct a Chinese-context routine summary to follow the captain's language with the durable fallback");
+}
 
-// The durable cursor advances: a second turn_end mirrors only NEW dialog.
+// The durable cursor advances: a second turn_end mirrors only NEW English
+// dialog, preserving generic language-following behavior rather than pinning
+// this repository globally to Chinese.
 entries.push({ type: "message", message: { role: "user", content: "actually, task-7 may merge when green" } });
 fire("turn_end", {}, ctx);
-await settle(() => session.ops.filter((op) => op.kind === "custom").length === 4, "incremental mirror");
+await settle(() => session.ops.filter((op) => op.kind === "custom").length === 5, "incremental mirror");
 const latest = session.ops[session.ops.length - 1];
 if (latest.message.content !== "[captain] actually, task-7 may merge when green") {
   throw new Error(`incremental mirror re-sent old dialog or lost the new line: ${latest.message.content}`);
@@ -1335,7 +1346,7 @@ const ctx2 = {
   },
 };
 fire("turn_end", {}, ctx2);
-await settle(() => session.ops.filter((op) => op.kind === "custom").length === 5, "replacement-session mirror");
+await settle(() => session.ops.filter((op) => op.kind === "custom").length === 6, "replacement-session mirror");
 const fresh = session.ops[session.ops.length - 1];
 if (fresh.message.content !== "[captain] fresh session standing order") {
   throw new Error(`replacement session did not re-anchor the mirror: ${fresh.message.content}`);

@@ -71,6 +71,10 @@ Report verdict captain only for what a human must see:
 - anything destructive, irreversible, or security-sensitive.
 Everything else - routine status, a successful automatic recovery, an absorbed poll, a healthy pause - is verdict routine.
 When genuinely in doubt, choose captain: a spurious escalation costs a glance, a swallowed one costs trust.
+Write every fm_branch_report.summary concisely in the language of the most recent usable [captain] mirror message; this applies to routine and captain verdicts alike.
+Code identifiers, paths, full PR URLs, and established technical terms may stay in their original form.
+If no usable [captain] mirror exists, read data/captain.md and follow its durable language preference without quoting or copying its private content into the report.
+If neither source resolves a language, keep the language already used in this branch conversation.
 Write summaries in the captain's outcome language - the project, the fix, the PR, the worker, the blocker - never internal mechanics like wake kinds, status prefixes, worktrees, or state file names.
 
 # Role limits (deterministically enforced, not just prose)
