@@ -47,6 +47,9 @@ This feature is Pi-only by construction and changes nothing anywhere else:
 Main's captain and assistant text - never tool calls, tool results, operational injections, or the branch's own merged notes - is mirrored into the branch as read-only `fm-main-mirror` messages at main's turn end, before the next wake is handed over.
 The mirror cursor is durable (`state/.branch-mirror-cursor`), so a restart replays only the not-yet-mirrored dialog from main's session file, and a replacement main session re-anchors from its start.
 The branch prompt frames mirrored text as context for judgment, never as instructions addressed to the branch; an authorization addressed to main (for example "you may merge when green") does not relax the branch's role limits.
+The most recent usable `[captain]` mirror is also the primary language signal for every concise branch summary, for both `routine` and `captain` verdicts; code identifiers, paths, full PR URLs, and established technical terms may remain in their original form.
+Without a usable captain mirror, the branch reads the durable language preference from the active home's gitignored [`data/captain.md`](configuration.md#captain-preferences-datacaptainmd--datacaptain-sharedmd) at wake time, then preserves the branch conversation's existing language if neither source resolves one.
+This wake-time lookup keeps private home content out of the tracked, byte-stable generated system-prompt prefix.
 
 ## Two-stage noise filter
 
