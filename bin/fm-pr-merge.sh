@@ -148,8 +148,8 @@ caller_requested_auto_merge() {
   return "$requested"
 }
 
-# Translate the former abstraction's accepted method and head spellings into
-# native gh flags while preserving every other caller argument in order.
+# Translate the accepted method and head spellings into native gh flags while
+# preserving every other caller argument in order.
 FM_PR_GITHUB_NATIVE_ARGS=()
 github_native_merge_args() {
   local arg value

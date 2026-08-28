@@ -7,8 +7,8 @@
 # `tasks-axi update --help` exposes --archive-body for recoverable note rewrites,
 # and `tasks-axi mv --help` exposes [<id>...] for atomic multi-ID moves required
 # by secondmate handoffs.
-# FM_TASKS_AXI_MIN follows the axi-family floor policy owned beside the floor
-# constants in bin/fm-bootstrap.sh.
+# FM_TASKS_AXI_MIN follows the AXI-family below-floor policy owned by
+# bin/fm-bootstrap.sh's header.
 # The feature probes are a separate concern and stay as defense in depth for
 # stripped or forked builds that advertise a current version without those flags.
 # `config/backlog-backend=manual` opts out of tasks-axi for routine firstmate
