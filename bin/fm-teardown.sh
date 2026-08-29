@@ -15,12 +15,13 @@
 # on a remote yet the change is fully in main.
 # The PR itself is resolved from the task's recorded pr= when present, or - when
 # no pr= was ever recorded (e.g. a yolo-authorized merge on a repo with no PR CI,
-# where the usual "checks green" fm-pr-check.sh trigger never fires) - by looking
-# up a merged PR whose head branch matches the worktree's branch, fetching its head
-# via refs/pull/<n>/head when the branch itself was deleted. So a missing pr= never
-# by itself causes a false refusal of landed work.
-# A gh lookup error falls back to the content check; if that is also inconclusive,
-# teardown refuses rather than risk discarding unlanded work.
+# where the usual "checks green" fm-pr-check.sh trigger never fires) - by using
+# native gh to look up exactly one PR whose head branch matches the worktree's
+# branch, fetching its head via refs/pull/<n>/head when the branch itself was
+# deleted. So a missing pr= never by itself causes a false refusal of landed work.
+# No match, an ambiguous branch lookup, or any gh error falls back to the content
+# check; if that is also inconclusive, teardown refuses rather than risk discarding
+# unlanded work.
 # Uncommitted changes are never landed.
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
@@ -997,15 +998,18 @@ remove_pr_poll_artifacts() {
   fi
 }
 
-# Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
-# single match and returns 0; returns non-zero on no match or any lookup failure,
-# so the caller treats it as "no PR found" (fail-safe).
+# Resolve the PR number for a worktree branch via native gh. Echoes the number
+# on one match and returns 0; returns non-zero on no match, an ambiguous result,
+# or any lookup failure, so the caller treats it as "no PR found" (fail-safe).
 pr_number_from_branch() {
-  local branch=$1 out n
+  local branch=$1 out count n
   [ -n "$branch" ] && [ "$branch" != HEAD ] || return 1
-  out=$( cd "$WT" && gh-axi pr list --state all --head "$branch" --limit 1 2>/dev/null ) || return 1
-  n=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*\([0-9][0-9]*\),.*/\1/p' | head -1)
-  [ -n "$n" ] || return 1
+  out=$(cd "$WT" && gh pr list --state all --head "$branch" --limit 2 \
+    --json number --jq '.[].number' 2>/dev/null) || return 1
+  count=$(printf '%s\n' "$out" | awk 'NF { count++ } END { print count + 0 }')
+  [ "$count" -eq 1 ] || return 1
+  n=$(printf '%s\n' "$out" | awk 'NF { print; exit }')
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s' "$n"
 }
 
