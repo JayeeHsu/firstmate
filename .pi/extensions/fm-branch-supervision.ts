@@ -597,10 +597,10 @@ export default function (pi: ExtensionAPI) {
   // runs; the note is a cache of it at main's tail. Delivery modes per the
   // design: routine+idle appends now with no turn, routine+busy appends after
   // the captain's next prompt, captain-relevant triggers exactly one turn
-  // (queued as a follow-up while main is busy) in which MAIN produces the
-  // captain-visible response. The captain-facing note is delivered silently
-  // (display: false) rather than printed or rendered separately; routine notes
-  // stay rendered except an explicitly silent
+  // (queued as a follow-up while main is busy) - that follow-up turn is
+  // itself the captain-visible outcome, so the captain-facing note is
+  // delivered silently (display: false) rather than printed or rendered a
+  // second time; routine notes stay rendered except an explicitly silent
   // no-change heartbeat. The read cursor advances once the note is handed to
   // Pi; a crash inside Pi's
   // own delivery window leaves the outcome durable in the store, where
