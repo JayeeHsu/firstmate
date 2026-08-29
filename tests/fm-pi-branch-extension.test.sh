@@ -652,9 +652,9 @@ if (/branch merged|\[routine\]|\[captain\]/.test(sentToMain[0].message.content))
   throw new Error(`routine note still has boilerplate: ${sentToMain[0].message.content}`);
 }
 // A routine note is rendered (display: true); a captain-facing note must
-// never be printed or rendered at all - the follow-up turn triggered above
-// is itself the captain-visible outcome. display: false is the exact flag
-// Pi's own chat renderer and HTML export both gate on before ever calling a
+// never be printed or rendered at all. MAIN's response in the follow-up turn
+// triggered above is captain-visible. display: false is the exact flag Pi's
+// own chat renderer and HTML export both gate on before ever calling a
 // customType renderer, so this is the authoritative "never printed" proof.
 if (sentToMain[0].message.display !== true) {
   throw new Error(`routine note must render: display=${sentToMain[0].message.display}`);
