@@ -2,20 +2,16 @@
 # Merge a task's PR or MR after recording pr= and any available pr_head= through
 # bin/fm-pr-check.sh, so teardown can verify landed work after squash merges.
 # The full canonical URL is parsed by bin/fm-pr-lib.sh. A GitHub pull request is
-# addressed through gh-axi by the derived owner and repository; a GitLab merge
-# request is addressed through glab by the project URL rebuilt from the parsed
-# host and path, so any instance works and no host is hardcoded.
+# addressed through native gh by the derived host, owner, and repository; a GitLab
+# merge request is addressed through glab by the project URL rebuilt from the
+# parsed host and path, so any instance works and no host is hardcoded.
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
-# The gh-axi merge abstraction always performs the merge; the outcome read that
-# follows it never becomes a prerequisite for reaching that abstraction. After
-# gh-axi returns success, GitHub's live state is read back and accepted only
-# when the pull request is merged or in the merge queue. gh's GraphQL API
-# supplies that queue-aware read when gh is on PATH; when gh is absent or its
-# read fails, gh-axi's own view still proves a landed merge, and every outcome
-# it cannot prove refuses, reporting the single failed read when gh is absent
-# and naming both failed reads when gh is present and its own read failed.
+# Native gh performs the merge, then GitHub's live GraphQL state is read back
+# and accepted only when the pull request is merged or in the merge queue.
+# A missing gh binary or an unreadable result refuses rather than claiming an
+# outcome that cannot be proved.
 # If the pull request remains open and the base branch has an effective
 # merge_queue rule, the refusal names the queue's configured merge method and
 # the exact -- --auto --<method> retry flags, unless the caller already passed
@@ -30,9 +26,7 @@
 # queued is refused the same way and says auto-merge was armed with nothing
 # landed or queued yet, or, when the merge command itself failed, that auto-merge
 # was only requested; both are read from the caller's own arguments rather than
-# from the forge's prose. The observed state is judged the same way whichever
-# read produced it, and a refusal built on the gh-axi view says the merge queue
-# could not be observed at all rather than implying an unqueued pull request.
+# from the forge's prose.
 # Every refusal that follows a merge command which returned success quotes that
 # command's own output, marked as the forge's text and kept apart from this
 # script's verdict, including the refusal for an outcome that cannot be read;
@@ -152,6 +146,43 @@ caller_requested_auto_merge() {
     esac
   done
   return "$requested"
+}
+
+# Translate the accepted method and head spellings into native gh flags while
+# preserving every other caller argument in order.
+FM_PR_GITHUB_NATIVE_ARGS=()
+github_native_merge_args() {
+  local arg value
+  FM_PR_GITHUB_NATIVE_ARGS=()
+  while [ "$#" -gt 0 ]; do
+    arg=$1
+    shift
+    case "$arg" in
+      --method)
+        [ "$#" -gt 0 ] || { echo "error: --method requires a value" >&2; return 1; }
+        value=$1
+        shift
+        case "$value" in
+          merge|squash|rebase) FM_PR_GITHUB_NATIVE_ARGS+=("--$value") ;;
+          *) echo "error: unsupported GitHub merge method: $value" >&2; return 1 ;;
+        esac
+        ;;
+      --method=*)
+        value=${arg#--method=}
+        case "$value" in
+          merge|squash|rebase) FM_PR_GITHUB_NATIVE_ARGS+=("--$value") ;;
+          *) echo "error: unsupported GitHub merge method: $value" >&2; return 1 ;;
+        esac
+        ;;
+      --sha)
+        [ "$#" -gt 0 ] || { echo "error: --sha requires a value" >&2; return 1; }
+        FM_PR_GITHUB_NATIVE_ARGS+=(--match-head-commit "$1")
+        shift
+        ;;
+      --sha=*) FM_PR_GITHUB_NATIVE_ARGS+=("--match-head-commit=${arg#--sha=}") ;;
+      *) FM_PR_GITHUB_NATIVE_ARGS+=("$arg") ;;
+    esac
+  done
 }
 
 reject_repo_overrides() {
@@ -318,11 +349,9 @@ FIELDS
   FM_PR_MERGE_HEAD=$live_head
 }
 
-# Read one live GitHub pull request view after gh-axi returns. The selected
-# fields distinguish a landed pull request from a merge-queue entry and retain
-# the concrete state needed for a refusal. gh supplies the complete queue-aware
-# view when available; gh-axi remains the degradation path that can prove a
-# landed merge without making gh a prerequisite for the merge abstraction.
+# Read one live GitHub pull request view after gh returns. The selected fields
+# distinguish a landed pull request from a merge-queue entry and retain the
+# concrete state needed for a refusal.
 FM_PR_GITHUB_STATE=
 FM_PR_GITHUB_MERGED=
 FM_PR_GITHUB_QUEUED=
@@ -334,7 +363,7 @@ github_read_outcome_with_gh() {
   local state='' merged='' queued='' base=''
 
   # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
-  if ! fields=$(gh api graphql \
+  if ! fields=$(gh api graphql --hostname "$FM_PR_HOST" \
     -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}}' \
     -F "owner=$PR_OWNER" -F "repo=$PR_REPO" -F "number=$PR_NUMBER" \
     --jq '.data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")' \
@@ -368,48 +397,9 @@ FIELDS
   FM_PR_GITHUB_QUEUE_OBSERVED=true
 }
 
-github_read_outcome_with_gh_axi() {
-  local output state
-  if ! output=$(gh-axi pr view "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" 2>/dev/null); then
-    return 1
-  fi
-  if ! state=$(printf '%s\n' "$output" | awk '
-    $1 == "state:" { count++; value=$2 }
-    END { if (count == 1 && value != "") print value; else exit 1 }
-  '); then
-    return 1
-  fi
-  case "$state" in
-    merged)
-      FM_PR_GITHUB_STATE=MERGED
-      FM_PR_GITHUB_MERGED=true
-      FM_PR_GITHUB_QUEUED=false
-      ;;
-    *)
-      FM_PR_GITHUB_STATE=$state
-      FM_PR_GITHUB_MERGED=false
-      FM_PR_GITHUB_QUEUED=unknown
-      ;;
-  esac
-  FM_PR_GITHUB_BASE=
-  FM_PR_GITHUB_QUEUE_OBSERVED=false
-}
-
 github_read_outcome() {
-  if ! command -v gh >/dev/null 2>&1; then
-    github_read_outcome_with_gh_axi && return 0
-    echo "error: could not read the GitHub pull request outcome after the merge attempt; PR metadata and merge poll remain recorded" >&2
-    return 1
-  fi
-  # Only a failed gh read falls back. A gh read that completes and reports the
-  # pull request as neither merged nor queued is a concrete outcome, not a
-  # missing one, so it keeps its own refusal. The gh-axi view cannot observe the
-  # merge queue, so it can only turn this into a proved merge or into a refusal.
   github_read_outcome_with_gh && return 0
-  if github_read_outcome_with_gh_axi && [ "$FM_PR_GITHUB_MERGED" = true ]; then
-    return 0
-  fi
-  echo "error: could not read the GitHub pull request outcome after the merge attempt: the gh read failed and the gh-axi view could not prove the outcome either; PR metadata and merge poll remain recorded" >&2
+  echo "error: could not read the GitHub pull request outcome after the merge attempt; PR metadata and merge poll remain recorded" >&2
   return 1
 }
 
@@ -448,7 +438,7 @@ github_read_queue_method() {
   command -v gh >/dev/null 2>&1 || return 0
   [ -n "$FM_PR_GITHUB_BASE" ] || return 0
   branch_path=$(github_urlencode_path_segment "$FM_PR_GITHUB_BASE")
-  if ! methods=$(gh api \
+  if ! methods=$(gh api --hostname "$FM_PR_HOST" \
     --paginate "repos/$PR_OWNER/$PR_REPO/rules/branches/$branch_path" \
     --jq '.[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")' \
     2>/dev/null); then
@@ -623,6 +613,17 @@ gitlab_confirm_merged() {
   [ "$state" = merged ]
 }
 
+# GitHub's native CLI is the single owner of both the merge call and its live
+# verification reads. Refuse before recording when that required executable is
+# absent; ordinary forge failures after this point keep the audit trail armed.
+if [ "$PROVIDER" = github ]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "error: merging a GitHub pull request requires gh on PATH" >&2
+    exit 1
+  fi
+  github_native_merge_args "$@" || exit 1
+fi
+
 # Record before either forge call. This arms the merge poll without claiming a
 # landed outcome, so even a provider read failure after a real merge cannot
 # leave teardown without the PR identity it needs to verify the result.
@@ -639,8 +640,9 @@ case "$PROVIDER" in
       FM_PR_GITHUB_AUTO_REQUESTED=true
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
-    if merge_output=$(gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
-      "${merge_args[@]+"${merge_args[@]}"}" "$@" 2>&1); then
+    if merge_output=$(gh pr merge "$PR_NUMBER" --repo "$FM_PR_HOST/$PR_OWNER/$PR_REPO" \
+      "${merge_args[@]+"${merge_args[@]}"}" \
+      "${FM_PR_GITHUB_NATIVE_ARGS[@]+"${FM_PR_GITHUB_NATIVE_ARGS[@]}"}" 2>&1); then
       FM_PR_GITHUB_MERGE_ACCEPTED=true
     else
       merge_status=$?

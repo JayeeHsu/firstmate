@@ -210,6 +210,15 @@ test_ship_modes_generate_clean_briefs() {
     grep -qx "Delivery contract: mode=$mode" "$brief" \
       || fail "$id: brief did not record its machine-readable delivery contract line"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
+    # shellcheck disable=SC2016 # Literal generated Markdown includes backticks.
+    assert_grep 'native `gh` CLI for GitHub operations' "$brief" \
+      "$id: brief missing native GitHub CLI guidance"
+    # shellcheck disable=SC2016 # Literal generated Markdown includes backticks.
+    assert_grep '`glab` or the existing GitLab integration for GitLab operations' "$brief" \
+      "$id: brief missing GitLab-specific guidance"
+    # shellcheck disable=SC2016 # Literal generated Markdown includes backticks.
+    assert_grep 'Ego Lite / `ego-browser` for browser automation and UI acceptance' "$brief" \
+      "$id: brief missing Ego Lite browser guidance"
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
