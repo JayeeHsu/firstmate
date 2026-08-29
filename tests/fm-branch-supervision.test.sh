@@ -53,12 +53,16 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *) fail "branch prompt lost the inlined recovery playbook" ;;
   esac
   case "$out_a" in
-    *"language of the most recent usable [captain] mirror message"*'`${FM_DATA_OVERRIDE:-$FM_HOME/data}/captain.md`'*"at wake time"*) ;;
+    *"language of the most recent usable [captain] mirror message"*"\`\${FM_DATA_OVERRIDE:-\$FM_HOME/data}/captain.md\`"*"at wake time"*) ;;
     *) fail "branch prompt lost the active-home captain-language resolution contract" ;;
+  esac
+  case "$out_a" in
+    *"Report verdict captain for any outcome that directly answers an explicit captain request."*"This rule is unconditional"*"Keep an unsolicited routine outcome as verdict routine"*"Keep an unchanged fleet review silent"*) ;;
+    *) fail "branch prompt lost the unconditional requested-outcome or routine-silence rules" ;;
   esac
   assert_not_contains "$out_a" "PRIVATE_HOME_A" "branch prompt copied home A's private preference into the provider prefix"
   assert_not_contains "$out_b" "PRIVATE_HOME_B" "branch prompt copied home B's private preference into the provider prefix"
-  pass "branch prompt is byte-stable and resolves summary language without absorbing home-private preferences"
+  pass "branch prompt is byte-stable, preserves requested-outcome routing, and resolves summary language without absorbing home-private preferences"
 }
 
 # --- append-only outcome store ------------------------------------------------
