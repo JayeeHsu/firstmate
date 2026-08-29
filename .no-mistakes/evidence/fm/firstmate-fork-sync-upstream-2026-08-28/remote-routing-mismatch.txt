@@ -1,0 +1,7 @@
+$ git remote -v
+origin	https://github.com/kunchenguid/firstmate.git (fetch)
+origin	https://github.com/kunchenguid/firstmate.git (push)
+
+Required by intent:
+origin=https://github.com/JayeeHsu/firstmate.git
+upstream=https://github.com/kunchenguid/firstmate.git (read-only)

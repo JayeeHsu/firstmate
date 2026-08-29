@@ -1,0 +1,8 @@
+$ git show --no-patch --format="%H %P %s" 68ac9c147e5742ce0413562362ef9c7a93032af9
+68ac9c147e5742ce0413562362ef9c7a93032af9 081e139ac470dcca6c132d00d2ccae1a36f0d182 1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1 Merge upstream main into Captain fork sync
+
+Ancestry assertions:
+PASS fork origin/main 081e139 is preserved in HEAD ancestry
+PASS upstream c651b59 is incorporated in HEAD ancestry
+PASS upstream 1fd7ea2 is incorporated in HEAD ancestry
+PASS sync is an ordinary two-parent merge of the exact fork and upstream tips

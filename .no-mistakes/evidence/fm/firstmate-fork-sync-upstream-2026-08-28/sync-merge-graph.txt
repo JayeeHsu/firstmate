@@ -1,0 +1,32 @@
+Firstmate fork sync merge evidence
+
+Requested fork base:
+081e139ac470dcca6c132d00d2ccae1a36f0d182 fix(pi): follow the captain's language in supervision summaries (#1)
+Requested upstream tip:
+1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1 feat(bin): add concurrent bounded remote transport lanes (#3210)
+
+Ordinary merge commit and exact parents:
+commit=68ac9c147e5742ce0413562362ef9c7a93032af9
+parents=081e139ac470dcca6c132d00d2ccae1a36f0d182 1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1
+subject=Merge upstream main into Captain fork sync
+
+Upstream range incorporated:
+c651b590edacd261919448c032a7f5b896f1e97b fix(pi): surface requested outcomes without replaying fleet events (#3211)
+1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1 feat(bin): add concurrent bounded remote transport lanes (#3210)
+
+Final validated head:
+fee574df6f6062ed1690ed303c718b2b9bda0c53 no-mistakes(review): Remove unrelated post-merge portability and rendering changes
+
+fork_base_is_ancestor_of_final=true
+upstream_tip_is_ancestor_of_final=true
+
+Graph:
+* fee574d (HEAD, fm/firstmate-fork-sync-upstream-2026-08-28) no-mistakes(review): Remove unrelated post-merge portability and rendering changes
+* 03e81c2 no-mistakes(test): Fix Bash portability, fixtures, and Pi rendering
+*   68ac9c1 Merge upstream main into Captain fork sync
+|\  
+| * 1fd7ea2 feat(bin): add concurrent bounded remote transport lanes (#3210)
+| * c651b59 fix(pi): surface requested outcomes without replaying fleet events (#3211)
+* | 081e139 (origin/main) fix(pi): follow the captain's language in supervision summaries (#1)
+|/  
+o bca584a fix(bin): prioritize active pipeline-owned crew runs (#3194)

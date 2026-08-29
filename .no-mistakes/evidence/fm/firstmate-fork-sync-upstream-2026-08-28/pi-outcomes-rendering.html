@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Firstmate outcomes rendering evidence</title>
+<style>
+  body { font: 16px system-ui; background: #101418; color: #eef; padding: 24px; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  section { background: #1a222b; border: 1px solid #52606d; border-radius: 10px; padding: 16px; }
+  pre { white-space: pre-wrap; color: #d8dee9; }
+  .bad { color: #ff8c8c; font-weight: 700; }
+  .good { color: #8ff0a4; }
+  code { background: #222; padding: 2px 5px; }
+  .reset { color: #8ff0a4; }
+  .missing { color: #ff8c8c; }
+</style>
+<h1><code>fm_branch_outcomes</code> — real Pi consumer rendering</h1>
+<p>Captured from the installed Pi <code>ToolExecutionComponent</code> against commit <code>fee574d</code>.</p>
+<p class="bad">FAIL: Calm-off output differs from Pi stock.</p>
+<main>
+  <section>
+    <h2>Pi stock (Calm off)</h2>
+    <pre>fm_branch_outcomes
+OUTCOME_ONE
+OUTCOME_TWO</pre>
+    <p class="reset">After OUTCOME_ONE: foreground style resets before line padding.</p>
+  </section>
+  <section>
+    <h2>Fork tool (Calm off)</h2>
+    <pre>fm_branch_outcomes
+OUTCOME_ONE
+OUTCOME_TWO</pre>
+    <p class="missing">After OUTCOME_ONE: foreground reset is missing, so custom style state bleeds across padding.</p>
+  </section>
+  <section>
+    <h2>Fork tool (Calm on)</h2>
+    <pre>(hidden)</pre>
+    <p class="good">The Calm visibility behavior itself works.</p>
+  </section>
+  <section>
+    <h2>Consumer-level result</h2>
+    <pre>calm_off_matches_stock=false
+calm_on_rows=0
+html_export=undefined</pre>
+    <p>The focused regression compares Pi's rendered terminal rows byte-for-byte and fails on the missing ANSI foreground reset.</p>
+  </section>
+</main>

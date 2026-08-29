@@ -1,0 +1,50 @@
+$ ./bin/fm-test-run.sh tests/fm-branch-supervision.test.sh tests/fm-pi-branch-extension.test.sh tests/fm-public-followup.test.sh tests/fm-supervision-instructions.test.sh
+FM_TEST_BEGIN 2026-08-28T20:50:29Z tests/fm-branch-supervision.test.sh family=unclassified expected_gate_skip=none
+ok - branch prompt is byte-stable, preserves requested-outcome routing, and resolves summary language without absorbing home-private preferences
+ok - outcome store is append-only and refuses sequence reuse after a torn tail
+ok - startup replay skips silent outcomes and preserves visible and legacy rows
+ok - lease exclusivity, same-actor refresh, release, staleness, and sweep hold
+ok - fm-control and fm-teardown refuse the other actor's live lease and pass through otherwise
+ok - PR merge, local landing, and new-task spawn refuse the branch actor and spare main
+ok - a non-Pi home ignores stale Pi leases even when the recycled pid owns its lock
+ok - lease liveness requires an exact valid session-lock pid
+ok - concurrent stale-lease claims serialize so exactly one actor succeeds
+ok - guard stale cleanup cannot race with or delete a newer lease claim
+ok - lease guard excludes a concurrent actor for the complete mutation
+ok - a claim naming the other actor fails loudly instead of silently impersonating it
+ok - release commands authorize the caller and bulk release drops only that actor's leases
+ok - the branch cannot force a teardown or bypass fm-control for a relaunch
+FM_TEST_END 2026-08-28T20:50:45Z tests/fm-branch-supervision.test.sh exit=0 duration_ms=15363 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:50:45Z tests/fm-pi-branch-extension.test.sh family=unclassified expected_gate_skip=none
+not ok - Pi outcomes rendering consumers must preserve stock behavior: file:///private/var/folders/ht/zkvrvdf53vv6fjtdnxq2mcxr0000gp/T/fm-pi-branch-extension.VmMoQB/stock-render-consumers/[eval1]:53
+  throw new Error("Calm-off ToolExecutionComponent rendering differs from Pi stock");
+        ^
+
+Error: Calm-off ToolExecutionComponent rendering differs from Pi stock
+    at file:///private/var/folders/ht/zkvrvdf53vv6fjtdnxq2mcxr0000gp/T/fm-pi-branch-extension.VmMoQB/stock-render-consumers/[eval1]:53:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v22.22.2: expected exit 0, got 1
+FM_TEST_END 2026-08-28T20:50:48Z tests/fm-pi-branch-extension.test.sh exit=1 duration_ms=3190 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:50:48Z tests/fm-public-followup.test.sh family=unclassified expected_gate_skip=none
+/Users/shanque/.no-mistakes/worktrees/d40eae9c103e/01M14Y7JA9NTY9CVEE90ABZ93V/bin/fm-public-followup.sh: line 142: PF_REGISTRY_LOCK_IDS[@]: unbound variable
+not ok - could not register the public commitment
+FM_TEST_END 2026-08-28T20:50:50Z tests/fm-public-followup.test.sh exit=1 duration_ms=1360 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:50:50Z tests/fm-supervision-instructions.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - renderer prints exactly the selected harness block
+ok - renderer falls back to unknown.md for unverified harness names
+ok - renderer includes read-only, afk, and effective x-mode current-state stanzas
+ok - renderer repair-line mode is harness-aware and honors conditional state
+ok - renderer preserves every harness ordinary-continuation and missing-cycle repair path
+ok - pi-signed keeps its identity while sharing Pi's supervision protocol
+ok - grok supervision is Claude-shaped background notify with passive Stop-hook backstop
+ok - grok rendered command sources the effective x-mode config
+ok - pi supervision snippet renders the effective extension path
+FM_TEST_END 2026-08-28T20:50:51Z tests/fm-supervision-instructions.test.sh exit=0 duration_ms=1236 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=2 skipped_gate=0 duration_ms=21551
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=1236 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=3 duration_ms=19913 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-branch-supervision.test.sh duration_ms=15363
+FM_TEST_SLOWEST rank=2 script=tests/fm-pi-branch-extension.test.sh duration_ms=3190
+FM_TEST_SLOWEST rank=3 script=tests/fm-public-followup.test.sh duration_ms=1360
+FM_TEST_SLOWEST rank=4 script=tests/fm-supervision-instructions.test.sh duration_ms=1236

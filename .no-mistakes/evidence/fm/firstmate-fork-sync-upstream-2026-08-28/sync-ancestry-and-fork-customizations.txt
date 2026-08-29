@@ -1,0 +1,17 @@
+Validated target: b39ebcb2936cc13a7cba068dc4d00a4455cdc717
+Ordinary merge: 68ac9c147e5742ce0413562362ef9c7a93032af9
+parents 081e139ac470dcca6c132d00d2ccae1a36f0d182 1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1
+subject Merge upstream main into Captain fork sync
+PASS fork tip 081e139 is an ancestor of the merge
+PASS upstream tip 1fd7ea2 is an ancestor of the merge
+Upstream range bca584a..1fd7ea2:
+c651b590edacd261919448c032a7f5b896f1e97b fix(pi): surface requested outcomes without replaying fleet events (#3211)
+1fd7ea289b7a4c23a1fd9474680ed2facd6b7dd1 feat(bin): add concurrent bounded remote transport lanes (#3210)
+Fork-only files retained relative to upstream tip:
+.pi/extensions/fm-branch-supervision.ts
+bin/fm-branch-prompt.sh
+bin/fm-public-followup.sh
+docs/pi-supervision-branch.md
+tests/fm-branch-supervision.test.sh
+tests/fm-on.test.sh
+tests/fm-pi-branch-extension.test.sh

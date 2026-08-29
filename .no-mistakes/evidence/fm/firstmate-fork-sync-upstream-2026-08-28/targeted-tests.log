@@ -1,0 +1,137 @@
+FM_TEST_BEGIN 2026-08-29T03:29:37Z tests/fm-branch-supervision.test.sh family=unclassified expected_gate_skip=none
+ok - branch prompt is byte-stable, preserves requested-outcome routing, and resolves summary language without absorbing home-private preferences
+ok - outcome store is append-only and refuses sequence reuse after a torn tail
+ok - startup replay skips silent outcomes and preserves visible and legacy rows
+ok - lease exclusivity, same-actor refresh, release, staleness, and sweep hold
+ok - fm-control and fm-teardown refuse the other actor's live lease and pass through otherwise
+ok - PR merge, local landing, and new-task spawn refuse the branch actor and spare main
+ok - a non-Pi home ignores stale Pi leases even when the recycled pid owns its lock
+ok - lease liveness requires an exact valid session-lock pid
+ok - concurrent stale-lease claims serialize so exactly one actor succeeds
+ok - guard stale cleanup cannot race with or delete a newer lease claim
+ok - lease guard excludes a concurrent actor for the complete mutation
+ok - a claim naming the other actor fails loudly instead of silently impersonating it
+ok - release commands authorize the caller and bulk release drops only that actor's leases
+ok - the branch cannot force a teardown or bypass fm-control for a relaunch
+FM_TEST_END 2026-08-29T03:29:52Z tests/fm-branch-supervision.test.sh exit=0 duration_ms=15091 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:29:52Z tests/fm-pi-branch-extension.test.sh family=unclassified expected_gate_skip=none
+not ok - Pi outcomes rendering consumers must preserve stock behavior: file:///private/var/folders/ht/zkvrvdf53vv6fjtdnxq2mcxr0000gp/T/fm-pi-branch-extension.sKbnPa/stock-render-consumers/[eval1]:53
+  throw new Error("Calm-off ToolExecutionComponent rendering differs from Pi stock");
+        ^
+
+Error: Calm-off ToolExecutionComponent rendering differs from Pi stock
+    at file:///private/var/folders/ht/zkvrvdf53vv6fjtdnxq2mcxr0000gp/T/fm-pi-branch-extension.sKbnPa/stock-render-consumers/[eval1]:53:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v22.22.2: expected exit 0, got 1
+FM_TEST_END 2026-08-29T03:29:55Z tests/fm-pi-branch-extension.test.sh exit=1 duration_ms=3211 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:29:55Z tests/fm-public-followup.test.sh family=unclassified expected_gate_skip=none
+/Users/shanque/.no-mistakes/worktrees/d40eae9c103e/01M14Y7JA9NTY9CVEE90ABZ93V/bin/fm-public-followup.sh: line 142: PF_REGISTRY_LOCK_IDS[@]: unbound variable
+not ok - could not register the public commitment
+FM_TEST_END 2026-08-29T03:29:56Z tests/fm-public-followup.test.sh exit=1 duration_ms=801 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:29:56Z tests/fm-supervision-instructions.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - renderer prints exactly the selected harness block
+ok - renderer falls back to unknown.md for unverified harness names
+ok - renderer includes read-only, afk, and effective x-mode current-state stanzas
+ok - renderer repair-line mode is harness-aware and honors conditional state
+ok - renderer preserves every harness ordinary-continuation and missing-cycle repair path
+ok - pi-signed keeps its identity while sharing Pi's supervision protocol
+ok - grok supervision is Claude-shaped background notify with passive Stop-hook backstop
+ok - grok rendered command sources the effective x-mode config
+ok - pi supervision snippet renders the effective extension path
+FM_TEST_END 2026-08-29T03:29:57Z tests/fm-supervision-instructions.test.sh exit=0 duration_ms=608 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:29:57Z tests/fm-on.test.sh family=secondmate expected_gate_skip=none
+ok - fm-on --stdin preserves argv, stdin, stdout, stderr, and exit status without shell interpretation
+ok - fm-on defaults the remote command's stdin to /dev/null
+ok - fm-on arms a bounded SSH dead-peer detection window by default (15s x 3 = 45s)
+ok - fm-on's dead-peer detection window is env-overridable
+ok - fm-on rejects invalid dead-peer settings before launching ssh
+ok - the fixed entrypoint runs every command in the worker's explicit environment
+ok - the entrypoint composes a deduplicated discovered child PATH (kept 2 existing, omitted 9 absent)
+ok - read-only doctor inspects worker gaps over plain SSH without repair
+ok - the remote doctor reports the same PATH the entrypoint hands its children
+ok - the remote doctor derives tool readiness from the installed worker
+ok - the remote doctor reports its required runtime tool set and optional tools
+ok - multiple fm-*.sh executables work without a command table
+ok - tracked-command authorization excludes checkout-local git
+ok - doctor bootstrap remains authenticated when git is unavailable
+ok - transport rejects shell escape, traversal, symlink, and option-injection surfaces
+ok - the fixed entrypoint refuses incompatible protocols and unsafe roots
+ok - ambiguous aliases refuse while exact secondmate ids remain routable
+ok - unreachable and ambiguous transport failures are surfaced without retry
+ALL TESTS PASSED
+FM_TEST_END 2026-08-29T03:31:10Z tests/fm-on.test.sh exit=0 duration_ms=73368 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:31:10Z tests/fm-remote-job.test.sh family=secondmate expected_gate_skip=none
+ok - default queue and execution bounds independently cover long polls
+ok - operator PATH excludes a symlinked local bin
+ok - operator PATH honors nvm defaults with a deterministic fallback
+ok - operator PATH resolves the authorized Nix profile bin link
+ok - operator PATH orders discovered tool installs deterministically
+ok - the worker preserves bounded argv and stdin in an empty environment
+ok - active jobs keep the worker ready for concurrent requests
+ok - ensure replaces a live worker after its code changes
+ok - worker identity binds the canonical configured code root
+ok - stale ownership is reclaimed without signaling a reused pid
+ok - the worker enforces the job timeout and publishes its result
+ok - the worker expires queued jobs before they can mutate
+ok - queued jobs receive a fresh bounded execution window
+ok - a queued short command preempts a running long poll instead of waiting its window
+ok - a poll re-armed after preemption reads the same cursor with nothing lost
+ok - sibling polls never preempt each other into a re-arm churn loop
+ok - worker shutdown terminates the active command tree before replacement
+ok - Linux supervision recovers crashes and stops orphaned commands
+ok - pre-execution validation obeys the job timeout
+ok - the worker drains bounded output without changing command results
+ok - the worker refuses symlinked job fields before command execution
+ok - failed shutdown quarantines ownership against replacement workers
+ok - quarantine recovery refuses unverifiable supervisors and ignores reused pids
+ok - a repeatedly signalled shutdown still releases ownership for the next worker
+ok - barely healthy worker failures remain bounded by the restart guard
+ALL TESTS PASSED
+FM_TEST_END 2026-08-29T03:32:51Z tests/fm-remote-job.test.sh exit=0 duration_ms=100619 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:32:51Z tests/fm-remote-transport-lanes.test.sh family=secondmate expected_gate_skip=none
+ok - atomic sequence claims remain unique and reap only after expiry
+ok - lanes run homes concurrently while each home stays FIFO
+ok - same-home jobs staged in the same second execute in staging-sequence order
+ok - same-home sequence order follows completed staging publication
+ok - a caller killed mid-wait cancels its queued job before execution
+ok - a caller killed mid-wait stops its running job's process group
+ok - a signal-less caller disconnect cancels the abandoned job through the parent probe
+ok - bounded reads after a cancellation meet their own budget with no convoy
+ok - an open caller stdin no longer wedges a non-payload remote command
+ok - a live explicit-stdin stage survives the staging-litter age bound
+ok - --stdin still delivers a payload caller's bytes
+ok - abandoned stage litter is reaped by age while fresh staging survives
+ALL TESTS PASSED
+FM_TEST_END 2026-08-29T03:34:16Z tests/fm-remote-transport-lanes.test.sh exit=0 duration_ms=85082 gate_skip=false
+FM_TEST_BEGIN 2026-08-29T03:34:16Z tests/fm-send-remote-delivery.test.sh family=unclassified expected_gate_skip=none
+ok - fm-send remote: a text steer lands as a durable remote inbox record and exits 0 at enqueue
+ok - fm-send remote: the printed correlation-reusing resend deduplicates onto the same record
+ok - fm-send remote: a failed retry cannot erase an earlier ambiguous delivery
+ok - fm-send remote: fire-and-forget delivery is idempotent without reply recovery
+ok - remote control: send revalidates endpoint ownership under the metadata lock
+ok - fm-send remote: enqueue revalidates the parent route under its metadata lock
+ok - fm-send remote: expected host is enforced by final route validation
+ok - fm-send remote: a --resolve-key answer closes its decision at enqueue
+ok - fm-send remote: every remote text, harness-native included, rides the inbox
+ok - fm-send remote: a real remote failure still fails loudly with the remote diagnostics
+ok - fm-send remote: exit 3 from the remote leg is a failure, never a delivery claim
+ok - fm-send remote: ssh 255 fails with resend-safe guidance and preserves the expectation
+ok - fm-send remote: the remote leg is budget-bounded and stays idempotent across the bound
+ok - fm-send local: an unconfirmed submit exits 3 with an honest non-error report
+ok - fm-send local: an unconfirmed submit still never closes a --resolve-key decision
+ok - fm-send local: an unconfirmed secondmate send keeps its reply expectation armed
+all fm-send-remote-delivery tests passed
+FM_TEST_END 2026-08-29T03:35:09Z tests/fm-send-remote-delivery.test.sh exit=0 duration_ms=53056 gate_skip=false
+FM_TEST_SUMMARY total=8 failed=2 skipped_gate=0 duration_ms=332657
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=608 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=3 duration_ms=259069 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=4 duration_ms=72159 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-job.test.sh duration_ms=100619
+FM_TEST_SLOWEST rank=2 script=tests/fm-remote-transport-lanes.test.sh duration_ms=85082
+FM_TEST_SLOWEST rank=3 script=tests/fm-on.test.sh duration_ms=73368
+FM_TEST_SLOWEST rank=4 script=tests/fm-send-remote-delivery.test.sh duration_ms=53056
+FM_TEST_SLOWEST rank=5 script=tests/fm-branch-supervision.test.sh duration_ms=15091
+FM_TEST_SLOWEST rank=6 script=tests/fm-pi-branch-extension.test.sh duration_ms=3211
+FM_TEST_SLOWEST rank=7 script=tests/fm-public-followup.test.sh duration_ms=801
+FM_TEST_SLOWEST rank=8 script=tests/fm-supervision-instructions.test.sh duration_ms=608

@@ -1,0 +1,91 @@
+$ ./bin/fm-test-run.sh tests/fm-on.test.sh tests/fm-remote-job.test.sh tests/fm-remote-transport-lanes.test.sh tests/fm-send-remote-delivery.test.sh
+FM_TEST_BEGIN 2026-08-28T20:51:24Z tests/fm-on.test.sh family=secondmate expected_gate_skip=none
+ok - fm-on --stdin preserves argv, stdin, stdout, stderr, and exit status without shell interpretation
+ok - fm-on defaults the remote command's stdin to /dev/null
+ok - fm-on arms a bounded SSH dead-peer detection window by default (15s x 3 = 45s)
+ok - fm-on's dead-peer detection window is env-overridable
+ok - fm-on rejects invalid dead-peer settings before launching ssh
+ok - the fixed entrypoint runs every command in the worker's explicit environment
+ok - the entrypoint composes a deduplicated discovered child PATH (kept 2 existing, omitted 9 absent)
+ok - read-only doctor inspects worker gaps over plain SSH without repair
+ok - the remote doctor reports the same PATH the entrypoint hands its children
+ok - the remote doctor derives tool readiness from the installed worker
+ok - the remote doctor reports its required runtime tool set and optional tools
+ok - multiple fm-*.sh executables work without a command table
+ok - tracked-command authorization excludes checkout-local git
+ok - doctor bootstrap remains authenticated when git is unavailable
+ok - transport rejects shell escape, traversal, symlink, and option-injection surfaces
+ok - the fixed entrypoint refuses incompatible protocols and unsafe roots
+ok - ambiguous aliases refuse while exact secondmate ids remain routable
+ok - unreachable and ambiguous transport failures are surfaced without retry
+ALL TESTS PASSED
+FM_TEST_END 2026-08-28T20:52:13Z tests/fm-on.test.sh exit=0 duration_ms=48947 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:52:13Z tests/fm-remote-job.test.sh family=secondmate expected_gate_skip=none
+ok - default queue and execution bounds independently cover long polls
+ok - operator PATH excludes a symlinked local bin
+ok - operator PATH honors nvm defaults with a deterministic fallback
+ok - operator PATH resolves the authorized Nix profile bin link
+ok - operator PATH orders discovered tool installs deterministically
+ok - the worker preserves bounded argv and stdin in an empty environment
+ok - active jobs keep the worker ready for concurrent requests
+ok - ensure replaces a live worker after its code changes
+ok - worker identity binds the canonical configured code root
+ok - stale ownership is reclaimed without signaling a reused pid
+ok - the worker enforces the job timeout and publishes its result
+ok - the worker expires queued jobs before they can mutate
+ok - queued jobs receive a fresh bounded execution window
+ok - a queued short command preempts a running long poll instead of waiting its window
+ok - a poll re-armed after preemption reads the same cursor with nothing lost
+ok - sibling polls never preempt each other into a re-arm churn loop
+ok - worker shutdown terminates the active command tree before replacement
+ok - Linux supervision recovers crashes and stops orphaned commands
+ok - pre-execution validation obeys the job timeout
+ok - the worker drains bounded output without changing command results
+ok - the worker refuses symlinked job fields before command execution
+ok - failed shutdown quarantines ownership against replacement workers
+ok - quarantine recovery refuses unverifiable supervisors and ignores reused pids
+ok - a repeatedly signalled shutdown still releases ownership for the next worker
+ok - barely healthy worker failures remain bounded by the restart guard
+ALL TESTS PASSED
+FM_TEST_END 2026-08-28T20:53:40Z tests/fm-remote-job.test.sh exit=0 duration_ms=86939 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:53:40Z tests/fm-remote-transport-lanes.test.sh family=secondmate expected_gate_skip=none
+ok - atomic sequence claims remain unique and reap only after expiry
+ok - lanes run homes concurrently while each home stays FIFO
+ok - same-home jobs staged in the same second execute in staging-sequence order
+ok - same-home sequence order follows completed staging publication
+ok - a caller killed mid-wait cancels its queued job before execution
+ok - a caller killed mid-wait stops its running job's process group
+ok - a signal-less caller disconnect cancels the abandoned job through the parent probe
+ok - bounded reads after a cancellation meet their own budget with no convoy
+ok - an open caller stdin no longer wedges a non-payload remote command
+ok - a live explicit-stdin stage survives the staging-litter age bound
+ok - --stdin still delivers a payload caller's bytes
+ok - abandoned stage litter is reaped by age while fresh staging survives
+ALL TESTS PASSED
+FM_TEST_END 2026-08-28T20:55:02Z tests/fm-remote-transport-lanes.test.sh exit=0 duration_ms=82554 gate_skip=false
+FM_TEST_BEGIN 2026-08-28T20:55:02Z tests/fm-send-remote-delivery.test.sh family=unclassified expected_gate_skip=none
+ok - fm-send remote: a text steer lands as a durable remote inbox record and exits 0 at enqueue
+ok - fm-send remote: the printed correlation-reusing resend deduplicates onto the same record
+ok - fm-send remote: a failed retry cannot erase an earlier ambiguous delivery
+ok - fm-send remote: fire-and-forget delivery is idempotent without reply recovery
+ok - remote control: send revalidates endpoint ownership under the metadata lock
+ok - fm-send remote: enqueue revalidates the parent route under its metadata lock
+ok - fm-send remote: expected host is enforced by final route validation
+ok - fm-send remote: a --resolve-key answer closes its decision at enqueue
+ok - fm-send remote: every remote text, harness-native included, rides the inbox
+ok - fm-send remote: a real remote failure still fails loudly with the remote diagnostics
+ok - fm-send remote: exit 3 from the remote leg is a failure, never a delivery claim
+ok - fm-send remote: ssh 255 fails with resend-safe guidance and preserves the expectation
+ok - fm-send remote: the remote leg is budget-bounded and stays idempotent across the bound
+ok - fm-send local: an unconfirmed submit exits 3 with an honest non-error report
+ok - fm-send local: an unconfirmed submit still never closes a --resolve-key decision
+ok - fm-send local: an unconfirmed secondmate send keeps its reply expectation armed
+all fm-send-remote-delivery tests passed
+FM_TEST_END 2026-08-28T20:55:46Z tests/fm-send-remote-delivery.test.sh exit=0 duration_ms=43696 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=262528
+FM_TEST_SUMMARY_FAMILY family=secondmate count=3 duration_ms=218440 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=43696 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-job.test.sh duration_ms=86939
+FM_TEST_SLOWEST rank=2 script=tests/fm-remote-transport-lanes.test.sh duration_ms=82554
+FM_TEST_SLOWEST rank=3 script=tests/fm-on.test.sh duration_ms=48947
+FM_TEST_SLOWEST rank=4 script=tests/fm-send-remote-delivery.test.sh duration_ms=43696
